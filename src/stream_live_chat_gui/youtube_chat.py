@@ -211,7 +211,9 @@ class YoutubeLiveChat:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 return
 
-            # TODO: Test inside db_interactions.py
+            # TODO: implement displaying live chat messages in the gui window
+
+            # TODO: Test the next inside db_interactions.py
             if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
                 questions_already_asked_by_user: int = (
                     self.db.count_questions_asked_by_user(user=user)
@@ -222,12 +224,15 @@ class YoutubeLiveChat:
                     )
                     return
 
+            # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
+            msg = msg.lower()
+
             if CHAT_FILTER_WORD in msg and published_at_datetime > self.start_time:
                 log.debug(f" User: {user}, sent a question: {msg}, at {published_at}")
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
                 # double spaces or leading/trailing spaces
                 cleaned_msg = " ".join(msg.replace(CHAT_FILTER_WORD, "").split())
-                # If after cleaning it, the msg is not an empty string..
+                # If after cleaning it, the msg is not an empty string, then register it
                 if cleaned_msg:
                     self.db.add_new_question(user_name=user, question_msg=cleaned_msg)
         return

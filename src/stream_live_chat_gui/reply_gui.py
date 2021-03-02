@@ -67,6 +67,7 @@ class AnswersUi(QMainWindow):
         self.start_stream_button = QPushButton("Start Stream", self)
         self.start_stream_button.setCheckable(True)
         self.current_question_text = QLabel()
+        self.current_question_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.current_question_display = QScrollArea()
         self._add_text_box_with_scroll_area(
             self.current_question_text, self.current_question_display

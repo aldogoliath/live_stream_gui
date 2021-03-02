@@ -160,7 +160,6 @@ class AppController:
         reset that first. And then get the one before to the latest to display it again as the current
         one. Using `current_timer_per_question_id` to restart the current_question_time
         """
-        # (self.view.current_question_text.setText(question.question))
         if self.db.count_all_replied_questions() < 2:
             return
 
