@@ -8,6 +8,7 @@ from stream_live_chat_gui import QuestionTuple, YOUTUBER_NAME, DATABASE_NAME
 from stream_live_chat_gui.record_files import FileRecording
 from PyQt5.QtCore import QItemSelectionModel, QModelIndex, QTime, Qt
 from PyQt5.QtWidgets import QTableView
+from queue import Queue
 from datetime import datetime
 from enum import Enum
 import logging
@@ -38,11 +39,14 @@ class AppController:
         self.answer_average = None
         self.auto_reply_value: int = 0
         self.current_timer_per_question_id = dict()
-        # Show camera reset dialog every 24 min
+        # Show camera reset dialog every 25 min
         self.view.camera_reset_timer.start(1500000)
 
         # To account for youtube failures and the need to split the files on which the questions are saved
         self.start_stream_button_click_counter: int = 0
+
+        # Open/Close question control (inter-thread communication)
+        self.open_close_question_control_queue = Queue(maxsize=1)
 
         # Setting these ones for the banner display file
         self.answer_average_for_display: str = None
@@ -287,12 +291,6 @@ class AppController:
         self.view.replied_questions_view.model().refresh()
         self.view.pending_questions_view.model().refresh()
         self.update_question_counters_and_banner()
-        # self.record_file.update_banner(
-        #     pending_questions=self.number_of_pending_questions,
-        #     answer_average=self.answer_average_for_display,
-        #     wait_average=self.wait_average_for_display,
-        #     open_questions=self.youtube_questions_open,
-        # )
 
     # https://stackoverflow.com/questions/41327545/how-to-create-a-timer-in-pyqt
     def stream_timer_control(self):
@@ -311,15 +309,51 @@ class AppController:
             )
             self.view.youtube_open_questions.setEnabled(True)
             self.view.add_manual_question_button.setEnabled(True)
+            self._start_youtube_live_chat_execution()
+            # Refresh table view/counters every 2.5 seconds
+            self.view.table_refresh_timer.start(2500)
         else:
+            # TODO: TEST THIS -> Click `Stop Stream` and the child thread doing the live chat api calls should stop
+            self.youtube_chat_streamer_thread.join()
             log.debug("Stopping stream")
             self.view.stream_timer.stop()
+            self.view.table_refresh_timer.stop()
             self.view.start_stream_button.setText("Start Stream")
             if self.youtube_questions_open:
                 self.view.youtube_open_questions.setChecked(False)
                 self.youtube_questions_open = False
             self.view.youtube_open_questions.setEnabled(False)
             self.view.add_manual_question_button.setEnabled(False)
+
+    def _start_youtube_live_chat_execution(self) -> None:
+        # TODO: Add a popup display message displaying the error of the try/except block.
+        # After that, uncheck the checkbox, reference -> `self.checkbox_confirmed.setCheckState(Qt.Unchecked)`
+        # TODO: check if the queue needs to be added a value before or after creating the thread instance
+        try:
+            self.youtube_chat_streamer_thread = YoutubeStreamThreadControl(
+                self.open_close_question_control_queue, self.db_filename
+            )
+            self.youtube_chat_streamer_thread.daemon = True
+            self.youtube_chat_streamer_thread.start()
+        except UnableToGetVideoId as error:
+            log.debug(f"ERROR getting live video id: \n{error}")
+            # setCheckState -> Qt.Unchecked triggers (stateChanged), it's disabled here so the `else` below
+            # doesn't react to it
+            self.view.youtube_open_questions.blockSignals(True)
+            self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
+            self.view.youtube_open_questions.blockSignals(False)
+            self.view.youtube_open_questions.setEnabled(False)
+
+            self.view.start_stream_button.setChecked(False)
+            self.view.start_stream_button.setText("Start Stream")
+
+            self.start_stream_button_click_counter -= 1
+            log.debug(
+                f"Decreasing start_stream_button_click_counter to: {self.start_stream_button_click_counter}"
+            )
+            self.view.stream_timer.stop()
+            # RESET TIMER ?
+        return
 
     def display_stream_timer(self):
         self.view.stream_time = self.view.stream_time.addSecs(1)
@@ -433,57 +467,16 @@ class AppController:
             f"Checking for {AppController.youtube_chat_checkbox_click_action.__name__}"
         )
         if state == Qt.Checked:
-            # TODO: put the next method below in a try/except clause and in the except handler, do against
-            # UnableToGetVideoId. Add a popup display message displaying the error.
-            # After that, uncheck the checkbox, reference -> `self.checkbox_confirmed.setCheckState(Qt.Unchecked)`
-            try:
-                self.youtube_chat_streamer_thread = YoutubeStreamThreadControl(
-                    self.db_filename
-                )
-            except UnableToGetVideoId as error:
-                log.debug(f"ERROR getting live video id: \n{error}")
-                # setCheckState -> Qt.Unchecked triggers (stateChanged), it's disabled here so the `else` below
-                # doesn't react to it
-                self.view.youtube_open_questions.blockSignals(True)
-                self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
-                self.view.youtube_open_questions.blockSignals(False)
-                self.view.youtube_open_questions.setEnabled(False)
-
-                self.view.start_stream_button.setChecked(False)
-                self.view.start_stream_button.setText("Start Stream")
-
-                self.start_stream_button_click_counter -= 1
-                log.debug(
-                    f"Decreasing start_stream_button_click_counter to: {self.start_stream_button_click_counter}"
-                )
-                self.view.stream_timer.stop()
-                # RESET TIMER ?
-                return
-
-            self.youtube_chat_streamer_thread.start()
             log.debug("Youtube stream, opening questions")
+            self.open_close_question_control_queue.put(True)
             self.view.youtube_open_questions.setText("Close questions")
             self.youtube_questions_open = True
-            # self.record_file.update_banner(
-            #     pending_questions=self.number_of_pending_questions,
-            #     answer_average=self.answer_average_for_display,
-            #     wait_average=self.wait_average_for_display,
-            #     open_questions=self.youtube_questions_open,
-            # )
-            # Refresh table view/counters every 2.5 seconds
-            self.view.table_refresh_timer.start(2500)
+
         else:
-            self.view.youtube_open_questions.setText("Open questions")
-            self.youtube_chat_streamer_thread.join()
             log.debug("Youtube stream, closing questions")
-            self.view.table_refresh_timer.stop()
+            self.view.youtube_open_questions.setText("Open questions")
+            self.open_close_question_control_queue.put(False)
             self.youtube_questions_open = False
-            # self.record_file.update_banner(
-            #     pending_questions=self.number_of_pending_questions,
-            #     answer_average=self.answer_average_for_display,
-            #     wait_average=self.wait_average_for_display,
-            #     open_questions=self.youtube_questions_open,
-            # )
 
     # Unused for now, leaving it as reference
     # def twitch_chat_button_click_action(self):

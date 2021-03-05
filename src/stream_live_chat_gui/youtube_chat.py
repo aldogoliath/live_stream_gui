@@ -9,6 +9,7 @@ from stream_live_chat_gui import (
     LIMITED_USERS,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
+from queue import Queue
 from datetime import datetime
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -45,22 +46,42 @@ class MemoryCache(Cache):
 
 
 class YoutubeStreamThreadControl(StreamerThreadControl):
-    def __init__(self, db_filename=None):
+    def __init__(self, questions_control_queue: Queue, db_filename=None):
         super().__init__(name="YoutubeStreamThread")
         # Controls the periodicity of the call to get the live chat
         # comments/questions
         self._sleepperiod = 5.0
-        self.set_youtube_thread_control_variables(db_filename)
+        self.set_youtube_thread_control_variables(questions_control_queue, db_filename)
 
-    def set_youtube_thread_control_variables(self, db_filename):
+    def set_youtube_thread_control_variables(
+        self, questions_control_queue, db_filename
+    ):
         self.youtube_service = YoutubeLiveChat(
             channel_id=YOUTUBE_CHANNEL_ID, db_filename=db_filename
         )
+        self.questions_control_queue = questions_control_queue
+        # Initializing
+        self.open_questions_start_time = None
 
     def run(self):
         """Main control loop"""
         while not self._stopevent.is_set():
-            self.youtube_service.get_live_chat_messages_threaded()
+            if self.questions_control_queue.empty():
+                log.debug("No value in queue")
+            else:
+                self.open_questions = self.questions_control_queue.get()
+                if self.open_questions:
+                    self.open_questions_start_time = datetime.utcnow()
+                    log.debug(
+                        f"Setting open_questions_start_time to: {self.open_questions_start_time}"
+                    )
+                else:
+                    self.open_questions_start_time = None
+
+                log.debug(f"Open questions queue value: {self.open_questions}")
+            self.youtube_service.get_live_chat_messages_threaded(
+                self.open_questions_start_time
+            )
             # Make the thread sleep so the main thread (gui `controller`) gets to run as well.
             self._stopevent.wait(self._sleepperiod)
 
@@ -171,7 +192,9 @@ class YoutubeLiveChat:
         log.debug(f"Response was: \n{response}")
         return response["items"][0]["snippet"]["liveChatId"]
 
-    def get_live_chat_messages_threaded(self) -> None:
+    def get_live_chat_messages_threaded(
+        self, open_questions_start_time: Optional[datetime]
+    ) -> None:
         # https://developers.google.com/youtube/v3/live/docs/liveChatMessages/list
         request = self.service.liveChatMessages().list(
             liveChatId=self.live_chat_id,
@@ -211,8 +234,6 @@ class YoutubeLiveChat:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 return
 
-            # TODO: implement displaying live chat messages in the gui window
-
             # TODO: Test the next inside db_interactions.py
             if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
                 questions_already_asked_by_user: int = (
@@ -227,7 +248,14 @@ class YoutubeLiveChat:
             # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
             msg = msg.lower()
 
-            if CHAT_FILTER_WORD in msg and published_at_datetime > self.start_time:
+            if open_questions_start_time is None:
+                log.debug("Questions are not open...")
+                return
+
+            if (
+                CHAT_FILTER_WORD in msg
+                and published_at_datetime > open_questions_start_time
+            ):
                 log.debug(f" User: {user}, sent a question: {msg}, at {published_at}")
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
                 # double spaces or leading/trailing spaces
