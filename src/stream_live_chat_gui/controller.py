@@ -96,8 +96,9 @@ class AppController:
         if self.record_file:
             self.record_file.update_banner(
                 pending_questions=self.number_of_pending_questions,
+                replied_questions=number_of_replied_questions,
                 answer_average=self.answer_average_for_display,
-                wait_average=self.wait_average_for_display,
+                estimated_total_wait=self.estimated_by_answer_time_for_display,
                 open_questions=self.youtube_questions_open,
             )
 
@@ -264,6 +265,7 @@ class AppController:
 
         # Add question and timestamp to record file
         # TODO: add workaround for reschedule last question scenario
+        # TODO: when integration with super chat, avoid registering such messages in the output file
         self.record_file.add_entry_to_record_file(
             replied_timestamp=datetime.utcnow(), question=question.question
         )

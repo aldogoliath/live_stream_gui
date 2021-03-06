@@ -211,6 +211,7 @@ class YoutubeLiveChat:
         for message in response["items"]:
             msg: str = message["snippet"]["displayMessage"]
             user: str = message["authorDetails"]["displayName"]
+            msg_type: str = message["snippet"]["type"]
             published_at: str = message["snippet"]["publishedAt"]
             log.debug(f"Original msg published_at: {published_at}")
 
@@ -234,16 +235,16 @@ class YoutubeLiveChat:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 return
 
-            # TODO: Test the next inside db_interactions.py
-            if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
-                questions_already_asked_by_user: int = (
-                    self.db.count_questions_asked_by_user(user=user)
-                )
-                if questions_already_asked_by_user > 4:
-                    log.debug(
-                        f"The user: {user}, has already asked {questions_already_asked_by_user}, questions"
-                    )
-                    return
+            # # TODO: Test the next inside db_interactions.py
+            # if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
+            #     questions_already_asked_by_user: int = (
+            #         self.db.count_questions_asked_by_user(user=user)
+            #     )
+            #     if questions_already_asked_by_user > 4:
+            #         log.debug(
+            #             f"The user: {user}, has already asked {questions_already_asked_by_user}, questions"
+            #         )
+            #         return
 
             # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
             msg = msg.lower()
@@ -252,11 +253,21 @@ class YoutubeLiveChat:
                 log.debug("Questions are not open...")
                 return
 
+            # TODO: ADD SUPER CHAT handling
+            if "superchat" in msg_type.lower():
+                log.warning("Pending Super Chat implementation")
+
             if (
                 CHAT_FILTER_WORD in msg
                 and published_at_datetime > open_questions_start_time
             ):
                 log.debug(f" User: {user}, sent a question: {msg}, at {published_at}")
+                # TODO: Add superchat event handling here (even if the user has reached its limit, register the
+                # question)
+
+                if self.has_limited_user_exceeded_question_count(user):
+                    return
+
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
                 # double spaces or leading/trailing spaces
                 cleaned_msg = " ".join(msg.replace(CHAT_FILTER_WORD, "").split())
@@ -264,6 +275,18 @@ class YoutubeLiveChat:
                 if cleaned_msg:
                     self.db.add_new_question(user_name=user, question_msg=cleaned_msg)
         return
+
+    def has_limited_user_exceeded_question_count(self, user: str) -> bool:
+        if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
+            questions_already_asked_by_user: int = (
+                self.db.count_questions_asked_by_user(user=user)
+            )
+            if questions_already_asked_by_user > 4:
+                log.debug(
+                    f"The user: {user}, has already asked {questions_already_asked_by_user}, questions"
+                )
+                return True
+        return False
 
 
 if __name__ == "__main__":

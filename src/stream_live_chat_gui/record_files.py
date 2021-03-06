@@ -13,6 +13,7 @@ from stream_live_chat_gui import (
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 TIMESTAMP_PER_QUESTION_FILE_SUFFIX = "Replied_"
+TIMESTAMP_PLACEHOLDER = "--:--:--"
 
 
 class FileRecording:
@@ -89,17 +90,22 @@ class FileRecording:
     def update_banner(
         self,
         pending_questions: int = 0,
-        answer_average: str = "--:--:--",
-        wait_average: str = "--:--",
+        replied_questions: int = 0,
+        answer_average: str = None,
+        estimated_total_wait: str = None,
         open_questions: bool = False,
     ) -> None:
+        answer_average = answer_average or TIMESTAMP_PLACEHOLDER
+        estimated_total_wait = estimated_total_wait or TIMESTAMP_PLACEHOLDER
         question_status_msg = "ABIERTAS." if open_questions else "CERRADAS."
+
         with open(self.banner_file, "w") as banner:
             banner.writelines(
                 [
                     f"Preguntas pendientes {pending_questions}",
                     f"\nTiempo promedio por respuesta: {answer_average}",
-                    f"\nEspera estimada: {wait_average}",
+                    f"\nEspera estimada: {estimated_total_wait}",
+                    f"\nPreguntas respondidas hoy: {replied_questions}",
                     f"\nPreguntas {question_status_msg}",
                 ]
             )
