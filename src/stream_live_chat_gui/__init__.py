@@ -7,13 +7,12 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 from dotenv import load_dotenv
 from threading import Thread, Event
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import json
 import logging
 from typing import NamedTuple, Optional
 
-logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
 SAVE_FILES_DATETIME_FORMAT = "%m%d%Y"
@@ -47,7 +46,9 @@ def search_files_in_resources_directory_given_extension(extension: str) -> list[
 
 # https://bit.ly/3aAI1f5
 def utc_to_local_time_formatted(utc_timestamp: datetime) -> str:
-    local_timestamp = utc_timestamp.replace(tzinfo=timezone.utc).astimezone(tz=None)
+    local_timestamp: datetime = utc_timestamp.replace(tzinfo=timezone.utc).astimezone(
+        tz=None
+    )
     log.debug(
         f"Given utc datetime: {utc_timestamp}, converted it to local time: {local_timestamp}"
     )
@@ -77,25 +78,31 @@ def previous_file_reference(
     return
 
 
-def set_time_adjusted_dabatase_name() -> str:
-    db_name = os.getenv("DATABASE_NAME")
-    local_datetime: str = utc_to_local_time_formatted(datetime.utcnow())
-    previous_db_file = previous_file_reference(
+def get_time_adjusted_filename(filename_reference: str, file_extension: str) -> str:
+    log.debug(
+        f"With filename reference: {filename_reference} and file extension: {file_extension}"
+    )
+    # First look for a file being created "one day" before
+    local_datetime: str = utc_to_local_time_formatted(
+        datetime.utcnow() - timedelta(hours=23)
+    )
+    previous_file = previous_file_reference(
         datetime_prefix=local_datetime,
-        file_name_suffix=db_name,
-        file_extension="db",
+        file_name_suffix=filename_reference,
+        file_extension=file_extension,
     )
 
-    if previous_db_file:
-        log.debug(f"Previous database file existed: {previous_db_file}")
-        return previous_db_file
+    if previous_file:
+        log.debug(f"Previous file existed: {previous_file}")
+        return previous_file
 
-    db_name = f"{local_datetime}_{db_name}"
-    log.debug(f"DATABASE_NAME = {db_name}")
-    return db_name
+    filename_to_be_created = f"{local_datetime}_{filename_reference}"
+    log.debug(f"Filename to be created = {filename_to_be_created}")
+    return filename_to_be_created
 
 
-DATABASE_NAME = set_time_adjusted_dabatase_name()
+db_name = os.getenv("DATABASE_NAME")
+DATABASE_NAME = get_time_adjusted_filename(db_name, "db")
 
 
 # TODO: Learn how to use joinedload in the query of questions to avoid this NamedTuple
@@ -167,6 +174,14 @@ def get_client_creds() -> str:
 
 def create_db():
     get_engine(db_filename=DATABASE_NAME)
+
+
+def get_log_file_name() -> str:
+    log_name = os.getenv("LOG_FILE")
+    adjusted_log_name = get_time_adjusted_filename(log_name, "log")
+    log_name_in_resources_path = get_resource(adjusted_log_name)
+    log.debug(f"Log filename adjusted: {log_name_in_resources_path}")
+    return log_name_in_resources_path
 
 
 # https://stackoverflow.com/questions/12223335/sqlalchemy-creating-vs-reusing-a-session

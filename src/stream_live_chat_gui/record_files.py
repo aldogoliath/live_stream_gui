@@ -46,7 +46,7 @@ class FileRecording:
         """
         # First look for a file being created one day before
         file_datetime: str = utc_to_local_time_formatted(
-            self.start_time_in_utc - timedelta(days=1)
+            self.start_time_in_utc - timedelta(hours=23)
         )
 
         previous_file = previous_file_reference(
