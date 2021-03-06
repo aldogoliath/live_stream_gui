@@ -312,8 +312,6 @@ class AppController:
             self.view.youtube_open_questions.setEnabled(True)
             self.view.add_manual_question_button.setEnabled(True)
             self._start_youtube_live_chat_execution()
-            # Refresh table view/counters every 2.5 seconds
-            self.view.table_refresh_timer.start(2500)
         else:
             # TODO: TEST THIS -> Click `Stop Stream` and the child thread doing the live chat api calls should stop
             self.youtube_chat_streamer_thread.join()
@@ -335,12 +333,11 @@ class AppController:
             self.youtube_chat_streamer_thread = YoutubeStreamThreadControl(
                 self.open_close_question_control_queue, self.db_filename
             )
-            self.youtube_chat_streamer_thread.daemon = True
-            self.youtube_chat_streamer_thread.start()
+
         except UnableToGetVideoId as error:
             log.debug(f"ERROR getting live video id: \n{error}")
-            # setCheckState -> Qt.Unchecked triggers (stateChanged), it's disabled here so the `else` below
-            # doesn't react to it
+            # setCheckState -> Qt.Unchecked triggers (stateChanged), it's disabled here so it doesn't trigger the
+            # button (youtube_open_questions) event
             self.view.youtube_open_questions.blockSignals(True)
             self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
             self.view.youtube_open_questions.blockSignals(False)
@@ -353,9 +350,15 @@ class AppController:
             log.debug(
                 f"Decreasing start_stream_button_click_counter to: {self.start_stream_button_click_counter}"
             )
-            self.view.stream_timer.stop()
             # RESET TIMER ?
-        return
+            self.view.stream_timer.stop()
+            return
+
+        self.youtube_chat_streamer_thread.daemon = True
+        self.youtube_chat_streamer_thread.start()
+
+        # Refresh table view/counters every 2.5 seconds
+        self.view.table_refresh_timer.start(2500)
 
     def display_stream_timer(self):
         self.view.stream_time = self.view.stream_time.addSecs(1)

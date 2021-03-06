@@ -235,17 +235,6 @@ class YoutubeLiveChat:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 return
 
-            # # TODO: Test the next inside db_interactions.py
-            # if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
-            #     questions_already_asked_by_user: int = (
-            #         self.db.count_questions_asked_by_user(user=user)
-            #     )
-            #     if questions_already_asked_by_user > 4:
-            #         log.debug(
-            #             f"The user: {user}, has already asked {questions_already_asked_by_user}, questions"
-            #         )
-            #         return
-
             # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
             msg = msg.lower()
 
