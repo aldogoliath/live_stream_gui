@@ -7,6 +7,7 @@ from stream_live_chat_gui import (
     CREDS_AUTH_PORT,
     CHAT_FILTER_WORD,
     LIMITED_USERS,
+    PRIVATE_TESTING,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
 from queue import Queue
@@ -16,7 +17,9 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery_cache.base import Cache
 from typing import Optional, Any
+import requests
 import os
+import re
 import pickle
 import logging
 
@@ -28,6 +31,8 @@ log = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 API_SERVICE_NAME, API_VERSION = "youtube", "v3"
+LIVE_STREAM_TARGET_URL = f"https://www.youtube.com/channel/{YOUTUBE_CHANNEL_ID}/live"
+PATTERN_TO_FIND_VIDEO_ID_USING_REQUESTS = r'"videoId":"(?P<video_id>.*)","broadcastId"'
 
 
 class UnableToGetVideoId(Exception):
@@ -46,18 +51,27 @@ class MemoryCache(Cache):
 
 
 class YoutubeStreamThreadControl(StreamerThreadControl):
-    def __init__(self, questions_control_queue: Queue, db_filename=None):
+    def __init__(
+        self,
+        questions_control_queue: Queue,
+        live_chat_record_file: str,
+        db_filename=None,
+    ):
         super().__init__(name="YoutubeStreamThread")
         # Controls the periodicity of the call to get the live chat
         # comments/questions
         self._sleepperiod = 5.0
-        self.set_youtube_thread_control_variables(questions_control_queue, db_filename)
+        self.set_youtube_thread_control_variables(
+            questions_control_queue, live_chat_record_file, db_filename
+        )
 
     def set_youtube_thread_control_variables(
-        self, questions_control_queue, db_filename
+        self, questions_control_queue, live_chat_record_file, db_filename
     ):
         self.youtube_service = YoutubeLiveChat(
-            channel_id=YOUTUBE_CHANNEL_ID, db_filename=db_filename
+            live_chat_record_file=live_chat_record_file,
+            channel_id=YOUTUBE_CHANNEL_ID,
+            db_filename=db_filename,
         )
         self.questions_control_queue = questions_control_queue
         # Initializing
@@ -89,23 +103,29 @@ class YoutubeStreamThreadControl(StreamerThreadControl):
 class YoutubeLiveChat:
     def __init__(
         self,
+        live_chat_record_file: str,
         channel_id: str = None,
-        is_own_channel: bool = False,
+        is_own_channel: bool = True,
         db_filename: str = None,
     ):
+        log.debug(f"PRIVATE_TESTING envvar is set to {PRIVATE_TESTING}")
+        is_own_channel = True if PRIVATE_TESTING == "yes" else False
+
         if channel_id is None and not is_own_channel:
             raise ValueError(
                 "channel_id nor own_channel where set.." "set one at least"
             )
+        log.debug(f"Passed live_chat_record_file: {live_chat_record_file}")
         db_file = db_filename if db_filename else DATABASE_NAME
         self.start_time = datetime.utcnow()
-        self.service = self.get_authenticated_service()
+        self.service = self.get_authenticated_service_using_oath()
         self.channel_id = channel_id
         self.live_chat_id = (
             self.get_own_channel_live_chat_id()
             if is_own_channel
             else self.get_active_live_chat_id_via_channel_id()
         )
+        self.live_chat_record_file = live_chat_record_file
         self.live_messages_page_token: str = None
         self.db = DBInteractions(db_filename=db_file)
 
@@ -130,7 +150,7 @@ class YoutubeLiveChat:
 
     # TODO: move this method to a different class or make it a module's method
     # (no need to be inside YoutubeLiveChat)
-    def get_authenticated_service(self):
+    def get_authenticated_service_using_oath(self):
         credentials = self.get_credentials()
         if not credentials or not credentials.valid:
             if credentials and credentials.expired and credentials.refresh_token:
@@ -155,10 +175,10 @@ class YoutubeLiveChat:
             API_SERVICE_NAME, API_VERSION, credentials=credentials, cache=MemoryCache()
         )
 
-    def get_video_id(self, channel_id: str) -> str:
+    def get_video_id(self) -> str:
         log.debug(f"Searching for video_id given channel_id: {self.channel_id}")
         search_for_video_id = self.service.search().list(
-            part="snippet", channelId=channel_id, eventType="live", type="video"
+            part="snippet", channelId=self.channel_id, eventType="live", type="video"
         )
         response = search_for_video_id.execute()
 
@@ -167,14 +187,30 @@ class YoutubeLiveChat:
         else:
             raise UnableToGetVideoId(
                 f"For channel ID: {self.channel_id} no live video_id was detected for api call "
-                f"{response['kind']}: {response}. MAKE SURE YOU ARE:"
+                f"{response['kind']}: {response}.\nMAKE SURE YOU ARE:"
                 "\n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
+            )
+        return video_id
+
+    def get_video_id_no_api(self) -> str:
+        youtube_live_stream_reply = requests.get(LIVE_STREAM_TARGET_URL)
+        match = re.search(
+            PATTERN_TO_FIND_VIDEO_ID_USING_REQUESTS, youtube_live_stream_reply.text
+        )
+        if match:
+            video_id = match.group("video_id")
+        else:
+            raise UnableToGetVideoId(
+                f"For channel ID: {self.channel_id} no live video_id was detected for api call "
+                "\nMAKE SURE YOU ARE:\n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
             )
         return video_id
 
     def get_active_live_chat_id_via_channel_id(self) -> str:
         """Since live chat """
-        video_id = self.get_video_id(self.channel_id)
+        # TODO: decide whether to deprecate this method in favor of the one using requests library after testing
+        # video_id = self.get_video_id()
+        video_id = self.get_video_id_no_api()
         log.debug(f"video_id: {video_id}")
         search_for_active_live_chat_id = self.service.videos().list(
             part="snippet, liveStreamingDetails", id=video_id
@@ -187,10 +223,18 @@ class YoutubeLiveChat:
         return live_chat_id
 
     def get_own_channel_live_chat_id(self) -> str:
+        # https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#resource
         request = self.service.liveBroadcasts().list(part="snippet", mine=True)
         response = request.execute()
         log.debug(f"Response was: \n{response}")
-        return response["items"][0]["snippet"]["liveChatId"]
+        if response["items"]:
+            live_chat_id = response["items"][0]["snippet"]["liveChatId"]
+        else:
+            raise UnableToGetVideoId(
+                f"No live_chat_id was detected for api call {response['kind']}: {response}."
+                "\nMAKE SURE YOU ARE: \n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
+            )
+        return live_chat_id
 
     def get_live_chat_messages_threaded(
         self, open_questions_start_time: Optional[datetime]
@@ -208,6 +252,8 @@ class YoutubeLiveChat:
 
         self.live_messages_page_token = response["nextPageToken"]
         # each item = https://developers.google.com/youtube/v3/live/docs/liveChatMessages#resource
+        # TODO: DELETE THIS after testing
+        log.debug(f"RESPONSE FROM API CALL LIVE CHAT: {response['items']}")
         for message in response["items"]:
             msg: str = message["snippet"]["displayMessage"]
             user: str = message["authorDetails"]["displayName"]
@@ -228,7 +274,7 @@ class YoutubeLiveChat:
                     f"Couldn't read correctly the message: {msg}, with the next datetime: {published_at}. "
                     f"Sanitized version looks like: {published_at_satinized}"
                 )
-                return
+                continue
 
             log.debug(f"Message: {msg}, published_at: {published_at_datetime}")
             if not published_at_datetime > self.start_time:
@@ -238,13 +284,20 @@ class YoutubeLiveChat:
             # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
             msg = msg.lower()
 
-            if open_questions_start_time is None:
-                log.debug("Questions are not open...")
-                return
-
             # TODO: ADD SUPER CHAT handling
             if "superchat" in msg_type.lower():
                 log.warning("Pending Super Chat implementation")
+
+            if CHAT_FILTER_WORD not in msg:
+                live_chat_comment = f"{user}: {msg}"
+                # std.out is redirected to a widget in the GUI (live_chat_feed_text_box)
+                print(live_chat_comment)
+                with open(self.live_chat_record_file, "a") as live_chat_file:
+                    live_chat_file.write(f"{live_chat_comment}\n")
+
+            if open_questions_start_time is None:
+                log.debug("Questions are not open...")
+                continue
 
             if (
                 CHAT_FILTER_WORD in msg
@@ -255,7 +308,7 @@ class YoutubeLiveChat:
                 # question)
 
                 if self.has_limited_user_exceeded_question_count(user):
-                    return
+                    continue
 
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
                 # double spaces or leading/trailing spaces
@@ -263,6 +316,7 @@ class YoutubeLiveChat:
                 # If after cleaning it, the msg is not an empty string, then register it
                 if cleaned_msg:
                     self.db.add_new_question(user_name=user, question_msg=cleaned_msg)
+
         return
 
     def has_limited_user_exceeded_question_count(self, user: str) -> bool:

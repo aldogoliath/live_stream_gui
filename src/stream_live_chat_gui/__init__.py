@@ -19,6 +19,7 @@ SAVE_FILES_DATETIME_FORMAT = "%m%d%Y"
 
 load_dotenv(".env")
 BANNER_FILENAME = os.getenv("BANNER_FILENAME")
+LIVE_CHAT_RECORD_FILENAME = os.getenv("LIVE_CHAT_RECORD_FILENAME")
 CLIENT_SECRETS_FILE = os.getenv("CLIENT_SECRETS_FILE")
 YOUTUBER_NAME = os.getenv("YOUTUBER_NAME")
 TOKEN_FILE = os.getenv("TOKEN_FILE")
@@ -28,6 +29,14 @@ YOUTUBE_COMMENT_MAX_LENGTH = os.getenv("YOUTUBE_COMMENT_MAX_LENGTH")
 QUESTION_LOOKUP_WEBPAGE = os.getenv("QUESTION_LOOKUP_WEBPAGE")
 CHAT_FILTER_WORD = os.getenv("CHAT_FILTER_WORD")
 YOUTUBE_DATETIME_FORMAT = os.getenv("YOUTUBE_DATETIME_FORMAT")
+PRIVATE_TESTING = os.getenv("PRIVATE_TESTING")
+# Checking that PRIVATE_TESTING envvar is set correctly
+if not PRIVATE_TESTING or not any(
+    PRIVATE_TESTING.lower() == valid_option for valid_option in ["yes", "no"]
+):
+    raise ValueError(
+        f"PRIVATE_TESTING value is incorrect: {PRIVATE_TESTING}, it needs to be either 'yes' or 'no'"
+    )
 # Can be deleted
 TEST_DB_FILENAME = os.getenv("TEST_DB_FILENAME")
 LIMITED_USERS = [user.strip().lower() for user in os.getenv("LIMITED_USERS").split(",")]
@@ -96,6 +105,8 @@ def get_time_adjusted_filename(filename_reference: str, file_extension: str) -> 
         log.debug(f"Previous file existed: {previous_file}")
         return previous_file
 
+    # If the file didn't exist with one day before datime, set to now
+    local_datetime: str = utc_to_local_time_formatted(datetime.utcnow())
     filename_to_be_created = f"{local_datetime}_{filename_reference}"
     log.debug(f"Filename to be created = {filename_to_be_created}")
     return filename_to_be_created

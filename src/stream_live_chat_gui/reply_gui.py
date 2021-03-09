@@ -10,9 +10,10 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QTextEdit,
     QMessageBox,
+    QPlainTextEdit,
 )
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt, QTimer, QTime
+from PyQt5.QtGui import QFont, QTextCursor
+from PyQt5.QtCore import Qt, QTimer, QTime, QObject, pyqtSignal
 from stream_live_chat_gui import (
     get_db_session,
     AlchemizedModelColumn,
@@ -20,10 +21,19 @@ from stream_live_chat_gui import (
 )
 from stream_live_chat_gui.alchemical_model import AlchemicalTableModel
 from stream_live_chat_gui.database_model import Question
+import sys
 from typing import Optional
+
 
 WINDOW_TITLE = "Live stream show"
 QUESTIONS_COUNTER_PLACEHOLDER = "0"
+
+
+class Stream(QObject):
+    newText = pyqtSignal(str)
+
+    def write(self, text):
+        self.newText.emit(str(text))
 
 
 class AnswersUi(QMainWindow):
@@ -41,6 +51,15 @@ class AnswersUi(QMainWindow):
         self._create_close_dialog_box()
         self._create_camera_reset_resources()
         self.show()
+        sys.stdout = Stream(newText=self.on_update_text)
+
+    def on_update_text(self, text):
+        cursor = self.live_chat_feed_text_box.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.insertText(text)
+        self.live_chat_feed_text_box.setTextCursor(cursor)
+        # TODO: Test this functionality
+        self.live_chat_feed_text_box.ensureCursorVisible()
 
     def _create_close_dialog_box(self):
         self.close_dialog_box = QMessageBox(self)
@@ -70,7 +89,9 @@ class AnswersUi(QMainWindow):
         self.current_question_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.current_question_display = QScrollArea()
         self._add_text_box_with_scroll_area(
-            self.current_question_text, self.current_question_display
+            self.current_question_text,
+            self.current_question_display,
+            (300, 150, 400, 300),
         )
 
         top_layout.addWidget(self.start_stream_button)
@@ -80,7 +101,11 @@ class AnswersUi(QMainWindow):
         self.general_layout.addLayout(top_layout)
 
     def _add_text_box_with_scroll_area(
-        self, text_box, scroll_area_display, text_to_set: str = None
+        self,
+        text_box,
+        scroll_area_display,
+        geometry: tuple,
+        text_to_set: str = None,
     ) -> None:
         """Text Box with scroll: current question
         args:
@@ -99,9 +124,9 @@ class AnswersUi(QMainWindow):
 
         scroll_area_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area_display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_display.setGeometry(300, 150, 400, 300)
+        scroll_area_display.setGeometry(*geometry)
         scroll_area_display.setWidgetResizable(True)
-        scroll_area_display.setWidget(self.current_question_text)
+        scroll_area_display.setWidget(text_box)
 
     def _create_central_layout(self) -> None:
         """
@@ -119,6 +144,7 @@ class AnswersUi(QMainWindow):
                 - "Ans Avg:" [QLabel display]
                 - "Est. by ans:" [QLabel display]
             - Table Right [SQLite connection/display]
+            - Scrolling Area Far Right [QScrollArea] -> Live Chat Feed
         """
         central_layout = QHBoxLayout()
 
@@ -138,6 +164,15 @@ class AnswersUi(QMainWindow):
         self.replied_questions_view = QTableView()
         self.replied_questions_view.setModel(self.replied_questions_model)
         self.replied_questions_view.setSelectionBehavior(QTableView.SelectRows)
+
+        # live chat feed https://stackoverflow.com/a/44433766/2706103
+        # https://doc.qt.io/qt-5/qplaintextedit.html (inherits QScrollArea)
+        self.live_chat_feed_text_box = QPlainTextEdit()
+        self.live_chat_feed_text_box.moveCursor(QTextCursor.Start)
+        # TODO: Test this functionality
+        self.live_chat_feed_text_box.ensureCursorVisible()
+        # self.live_chat_feed_text_box.setLineWrapColumnOrWidth(500)
+        self.live_chat_feed_text_box.setLineWrapMode(QPlainTextEdit.WidgetWidth)
 
         central_layout_column = QVBoxLayout()
         self.reply_auto_button = QPushButton("Reply Auto")
@@ -182,6 +217,7 @@ class AnswersUi(QMainWindow):
         central_layout.addWidget(self.pending_questions_view)
         central_layout.addLayout(central_layout_column)
         central_layout.addWidget(self.replied_questions_view)
+        central_layout.addWidget(self.live_chat_feed_text_box)
 
         # Add layout to the general one
         self.general_layout.addLayout(central_layout)
@@ -303,6 +339,9 @@ class AnswersUi(QMainWindow):
         self.setCentralWidget(self._central_widget)
         self._central_widget.setLayout(self.general_layout)
 
+    def __del__(self):
+        sys.stdout = sys.__stdout__
+
     def closeEvent(self, event):
         if self.start_stream_button.isChecked():
             self.close_dialog_box.exec()
@@ -310,3 +349,4 @@ class AnswersUi(QMainWindow):
             event.ignore()
         else:
             event.accept()
+            self.__del__()

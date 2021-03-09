@@ -2,18 +2,22 @@ import logging
 from datetime import datetime, timedelta
 from stream_live_chat_gui import (
     get_resource,
+    get_time_adjusted_filename,
     YOUTUBE_COMMENT_MAX_LENGTH,
     QUESTION_LOOKUP_WEBPAGE,
     BANNER_FILENAME,
-    previous_file_reference,
-    utc_to_local_time_formatted,
+    LIVE_CHAT_RECORD_FILENAME,
 )
+import re
 
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 TIMESTAMP_PER_QUESTION_FILE_SUFFIX = "Replied_"
 TIMESTAMP_PLACEHOLDER = "--:--:--"
+RECORDING_FILE_MATCH = (
+    r"(?P<date>\d+)_Replied_(?P<stream_counter_and_extension>\d+.txt)"
+)
 
 
 class FileRecording:
@@ -23,6 +27,7 @@ class FileRecording:
         self.file_number_of_lines = 0
         self.banner_file: str = None
         self.create_banner_file()
+        self.set_live_chat_file()
         self.start_recording_timestamp_per_question_file(split_count)
         self.questions_open: bool = False
 
@@ -37,6 +42,18 @@ class FileRecording:
                 ]
             )
 
+    def set_live_chat_file(self):
+        log.debug("Searching for live chat record file")
+        self.live_chat_file = get_time_adjusted_filename(
+            LIVE_CHAT_RECORD_FILENAME, "txt"
+        )
+        # To make the file be under resources directory
+        self.live_chat_file = get_resource(self.live_chat_file)
+
+        # Creating the file
+        with open(self.live_chat_file, "a"):
+            pass
+
     def start_recording_timestamp_per_question_file(self, split_count: int) -> None:
         """
         Only need to confirm if a file has been created already for this session/day,
@@ -44,30 +61,25 @@ class FileRecording:
         What changes here in the filename, besides the possible different split_count is mainly the
         file_datetime. It can point to yesterday or today.
         """
-        # First look for a file being created one day before
-        file_datetime: str = utc_to_local_time_formatted(
-            self.start_time_in_utc - timedelta(hours=23)
+        record_file_name = (
+            f"{get_time_adjusted_filename(TIMESTAMP_PER_QUESTION_FILE_SUFFIX, 'txt')}"
         )
 
-        previous_file = previous_file_reference(
-            file_datetime, TIMESTAMP_PER_QUESTION_FILE_SUFFIX, "txt"
-        )
+        is_previous_file = re.match(RECORDING_FILE_MATCH, record_file_name)
 
-        if previous_file:
-            log.debug(f"A reference file existed for datetime: {previous_file}")
-            self.record_file_name = f"{file_datetime}_Replied_{split_count}.txt"
-            log.debug(f"Record file name: {self.record_file_name}")
-            return
+        if not is_previous_file:
+            log.debug(f"Creating new record file name, prefix: {record_file_name}")
+            self.record_file_name = f"{record_file_name}{split_count}.txt"
+        else:
+            log.debug(
+                f"Previous file existed {record_file_name}, placing new counter: {split_count}"
+            )
+            self.record_file_name = record_file_name.replace(
+                is_previous_file.group("stream_counter_and_extension"),
+                f"{split_count}.txt",
+            )
 
-        log.debug(f"No active record_file was found for datetime: {file_datetime}")
-
-        file_datetime = utc_to_local_time_formatted(self.start_time_in_utc)
-
-        # split_count should be `0` in this case
-        self.record_file_name = f"{file_datetime}_Replied_{split_count}.txt"
-        log.debug(
-            f"A new file will be created as: {self.record_file_name}, for today's date"
-        )
+        log.debug(f"Record file name: {self.record_file_name}")
         # Creating the file
         with open(get_resource(self.record_file_name), "a"):
             pass
@@ -112,4 +124,5 @@ class FileRecording:
 
 
 if __name__ == "__main__":
+    algo = FileRecording(datetime.utcnow(), 0)
     pass

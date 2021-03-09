@@ -59,7 +59,6 @@ class AppController:
         self.view.youtube_open_questions.setEnabled(False)
         self.view.add_manual_question_button.setEnabled(False)
         self.record_file: FileRecording = None
-        self.start_time: datetime = None
         self.reset_pending_questions_pointers()
         self.reset_replied_questions_pointers()
 
@@ -300,9 +299,9 @@ class AppController:
             log.debug("Starting stream")
             self.view.stream_timer.start(1000)
             self.view.start_stream_button.setText("Stop Stream")
-            self.start_time = datetime.utcnow()
+            start_time = datetime.utcnow()
             self.record_file = FileRecording(
-                self.start_time, self.start_stream_button_click_counter
+                start_time, self.start_stream_button_click_counter
             )
 
             self.start_stream_button_click_counter += 1
@@ -311,7 +310,7 @@ class AppController:
             )
             self.view.youtube_open_questions.setEnabled(True)
             self.view.add_manual_question_button.setEnabled(True)
-            self._start_youtube_live_chat_execution()
+            self._start_youtube_live_chat_execution(self.record_file.live_chat_file)
         else:
             # TODO: TEST THIS -> Click `Stop Stream` and the child thread doing the live chat api calls should stop
             self.youtube_chat_streamer_thread.join()
@@ -325,13 +324,15 @@ class AppController:
             self.view.youtube_open_questions.setEnabled(False)
             self.view.add_manual_question_button.setEnabled(False)
 
-    def _start_youtube_live_chat_execution(self) -> None:
+    def _start_youtube_live_chat_execution(self, live_chat_record_file: str) -> None:
         # TODO: Add a popup display message displaying the error of the try/except block.
         # After that, uncheck the checkbox, reference -> `self.checkbox_confirmed.setCheckState(Qt.Unchecked)`
         # TODO: check if the queue needs to be added a value before or after creating the thread instance
         try:
             self.youtube_chat_streamer_thread = YoutubeStreamThreadControl(
-                self.open_close_question_control_queue, self.db_filename
+                self.open_close_question_control_queue,
+                live_chat_record_file,
+                self.db_filename,
             )
 
         except UnableToGetVideoId as error:
