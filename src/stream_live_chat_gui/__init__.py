@@ -154,7 +154,6 @@ class StreamerThreadControl(Thread):
 @contextmanager
 def session_manager(session: SQLSession) -> None:
     """Provide a transactional scope around a series of operations"""
-    log.debug("Creating the database session")
     session_ = session()
     try:
         yield session_

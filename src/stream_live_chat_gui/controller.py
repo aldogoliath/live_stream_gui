@@ -2,6 +2,7 @@
 from stream_live_chat_gui.youtube_chat import (
     YoutubeStreamThreadControl,
     UnableToGetVideoId,
+    UnableToGetLiveChatId,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
 from stream_live_chat_gui import QuestionTuple, YOUTUBER_NAME, DATABASE_NAME
@@ -335,8 +336,8 @@ class AppController:
                 self.db_filename,
             )
 
-        except UnableToGetVideoId as error:
-            log.debug(f"ERROR getting live video id: \n{error}")
+        except (UnableToGetVideoId, UnableToGetLiveChatId) as error:
+            log.debug(f"ERROR: \n{error}")
             # setCheckState -> Qt.Unchecked triggers (stateChanged), it's disabled here so it doesn't trigger the
             # button (youtube_open_questions) event
             self.view.youtube_open_questions.blockSignals(True)
