@@ -22,6 +22,7 @@ import os
 import re
 import pickle
 import logging
+import time
 
 
 LOG_FORMAT = "%(asctime)s %(message)s"
@@ -33,6 +34,7 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 API_SERVICE_NAME, API_VERSION = "youtube", "v3"
 LIVE_STREAM_TARGET_URL = f"https://www.youtube.com/channel/{YOUTUBE_CHANNEL_ID}/live"
 PATTERN_TO_FIND_VIDEO_ID_USING_REQUESTS = r'"videoId":"(?P<video_id>.*)","broadcastId"'
+LIVE_BROADCASTS_LIST_MAX_RESULTS = 50
 
 
 class UnableToGetVideoId(Exception):
@@ -228,12 +230,18 @@ class YoutubeLiveChat:
     def get_own_channel_live_chat_id(self) -> str:
         # https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#resource
         live_broadcast_next_token = None
+        number_of_executions = 1
 
         while True:
             request = self.service.liveBroadcasts().list(
-                part="snippet, status", mine=True, pageToken=live_broadcast_next_token
+                part="snippet, status",
+                mine=True,
+                broadcastType="all",
+                maxResults=LIVE_BROADCASTS_LIST_MAX_RESULTS,
+                pageToken=live_broadcast_next_token,
             )
             response = request.execute()
+            total_results_pagination = int(response["pageInfo"]["totalResults"])
             live_broadcast_next_token = response["nextPageToken"]
             log.debug(f"Next token: {live_broadcast_next_token}")
             log.debug(f"Response was: \n{response}")
@@ -242,15 +250,20 @@ class YoutubeLiveChat:
                 for item in response["items"]
             ):
                 log.debug(
-                    f"items inside liveBroadcasts list api response: {response['items']}"
+                    "Item with lifeCycleStatus `live` inside liveBroadcasts list found!}"
                 )
                 for item in response["items"]:
                     if item["status"]["lifeCycleStatus"] == "live":
                         live_chat_id = item["snippet"]["liveChatId"]
                         return live_chat_id
 
-            if not live_broadcast_next_token:
+            if (
+                LIVE_BROADCASTS_LIST_MAX_RESULTS * number_of_executions
+                >= total_results_pagination
+            ):
                 break
+            number_of_executions += 1
+            time.sleep(2.0)
 
         raise UnableToGetLiveChatId(
             f"No live_chat_id was detected for api call {response['kind']}."
