@@ -227,25 +227,35 @@ class YoutubeLiveChat:
 
     def get_own_channel_live_chat_id(self) -> str:
         # https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#resource
-        request = self.service.liveBroadcasts().list(part="snippet, status", mine=True)
-        response = request.execute()
-        log.debug(f"Response was: \n{response}")
-        if response["items"] and any(
-            item["status"]["lifeCycleStatus"] == "live" for item in response["items"]
-        ):
-            log.debug(
-                f"items inside liveBroadcasts list api response: {response['items']}"
+        live_broadcast_next_token = None
+
+        while True:
+            request = self.service.liveBroadcasts().list(
+                part="snippet, status", mine=True, pageToken=live_broadcast_next_token
             )
-            for item in response["items"]:
-                if item["status"]["lifeCycleStatus"] == "live":
-                    live_chat_id = item["snippet"]["liveChatId"]
-                    break
-        else:
-            raise UnableToGetLiveChatId(
-                f"No live_chat_id was detected for api call {response['kind']}: {response}."
-                "\nMAKE SURE YOU ARE: \n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
-            )
-        return live_chat_id
+            response = request.execute()
+            live_broadcast_next_token = response["nextPageToken"]
+            log.debug(f"Next token: {live_broadcast_next_token}")
+            log.debug(f"Response was: \n{response}")
+            if response["items"] and any(
+                item["status"]["lifeCycleStatus"] == "live"
+                for item in response["items"]
+            ):
+                log.debug(
+                    f"items inside liveBroadcasts list api response: {response['items']}"
+                )
+                for item in response["items"]:
+                    if item["status"]["lifeCycleStatus"] == "live":
+                        live_chat_id = item["snippet"]["liveChatId"]
+                        return live_chat_id
+
+            if not live_broadcast_next_token:
+                break
+
+        raise UnableToGetLiveChatId(
+            f"No live_chat_id was detected for api call {response['kind']}."
+            "\nMAKE SURE YOU ARE: \n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
+        )
 
     def get_live_chat_messages_threaded(
         self, open_questions_start_time: Optional[datetime]
