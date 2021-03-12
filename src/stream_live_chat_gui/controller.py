@@ -224,6 +224,16 @@ class AppController:
             self.view.current_question_text.setText("")
             return
 
+        # super chat takes priority
+        number_of_pending_super_chats = self.db.count_all_pending_questions(
+            is_super_chat=True
+        )
+        if number_of_pending_super_chats:
+            log.debug(
+                f"Number of pending super chat events: {number_of_pending_super_chats}"
+            )
+            self.reply_question(is_super_chat=True)
+
         self.auto_reply_value += 1
         log.debug(f"Reply auto, auto_reply_value: {self.auto_reply_value}")
 
@@ -241,9 +251,10 @@ class AppController:
             log.debug(f"Reply auto, random question: {self.auto_reply_value}")
             self.reply_question(random=True)
 
-    def reply_question(self, random=False):
+    def reply_question(self, random=False, is_super_chat=False):
         if (
             not self.db.count_all_pending_questions()
+            and not self.db.count_all_pending_questions(is_super_chat=True)
             or not self.view.start_stream_button.isChecked()
         ):
             self.view.current_question_text.setText("")
@@ -251,7 +262,11 @@ class AppController:
             # stream button action deal with this
             return
 
-        if not random:
+        if is_super_chat:
+            question: QuestionTuple = self.db.get_next_pending_question(
+                is_super_chat=True
+            )
+        elif not random:
             if self.pending_question_row_index == -1:
                 # reply top of the question
                 question: QuestionTuple = self.db.get_next_pending_question()
@@ -266,9 +281,10 @@ class AppController:
         # Add question and timestamp to record file
         # TODO: add workaround for reschedule last question scenario
         # TODO: when integration with super chat, avoid registering such messages in the output file
-        self.record_file.add_entry_to_record_file(
-            replied_timestamp=datetime.utcnow(), question=question.question
-        )
+        if not is_super_chat:
+            self.record_file.add_entry_to_record_file(
+                replied_timestamp=datetime.utcnow(), question=question.question
+            )
         # reset pointers
         self.reset_pending_questions_pointers()
         self.view.current_question_text.setText(question.question)

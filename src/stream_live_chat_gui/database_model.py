@@ -35,6 +35,7 @@ class Question(Base):
         nullable=False,
     )
     is_replied = Column(Boolean, default=False)
+    is_super_chat = Column(Boolean, default=False)
 
     waited = Column(
         Text(),

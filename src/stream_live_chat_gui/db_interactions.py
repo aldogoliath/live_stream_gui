@@ -8,8 +8,6 @@ from stream_live_chat_gui import (
 )
 from typing import Optional
 from stream_live_chat_gui.database_model import Question, User
-
-# from treelib import Tree  # treelib installed only for testing
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -20,7 +18,9 @@ class DBInteractions:
     def __init__(self, db_filename: str = None):
         self.session = get_db_session(db_filename)
 
-    def add_new_question(self, user_name: str, question_msg: str) -> None:
+    def add_new_question(
+        self, user_name: str, question_msg: str, is_super_chat: bool = False
+    ) -> None:
         """Add a new question to the database"""
         # Check if the question already exists (no matter the user)
         with session_manager(self.session) as session:
@@ -30,7 +30,7 @@ class DBInteractions:
                 .one_or_none()
             )
 
-            if question is not None:
+            if question is not None and not is_super_chat:
                 log.debug(
                     f"DUPLICATED_QUESTION: {question_msg} was already in the table"
                 )
@@ -38,8 +38,11 @@ class DBInteractions:
 
             log.debug(f"Question from user: {user_name} question: {question_msg}")
 
+            if is_super_chat:
+                log.debug("This is a SUPER CHAT event")
+
             # Create the question if needed
-            question = Question(question=question_msg)
+            question = Question(question=question_msg, is_super_chat=is_super_chat)
 
             # Check if the user making the question already exists
             user = session.query(User).filter(User.name == user_name).one_or_none()
@@ -72,6 +75,7 @@ class DBInteractions:
         )
         with session_manager(self.session) as session:
             question = session.query(Question).get(question_id)
+
             if replied:
                 session.query(Question).filter(Question.id == question_id).update(
                     {
@@ -103,14 +107,25 @@ class DBInteractions:
             )
             return [user.name for user in users]
 
-    def get_next_pending_question(self) -> QuestionTuple:
+    def get_next_pending_question(self, is_super_chat: bool = False) -> QuestionTuple:
         with session_manager(self.session) as session:
-            next_question = (
-                session.query(Question)
-                .filter(Question.is_replied == 0)
-                .order_by(Question.id)
-                .first()
-            )
+            if is_super_chat:
+                next_question = (
+                    session.query(Question)
+                    .filter(
+                        Question.is_replied == False,  # noqa: E712
+                        Question.is_super_chat == True,  # noqa: E712
+                    )
+                    .order_by(Question.id)
+                    .first()
+                )
+            else:
+                next_question = (
+                    session.query(Question)
+                    .filter(Question.is_replied == False)  # noqa: E712
+                    .order_by(Question.id)
+                    .first()
+                )
             return QuestionTuple(
                 next_question.id, next_question.user.name, next_question.question
             )
@@ -123,7 +138,7 @@ class DBInteractions:
             random_question = (
                 session.query(Question)
                 .options(joinedload(Question.user))
-                .filter(Question.is_replied == 0)
+                .filter(Question.is_replied == False)  # noqa: E712
                 .order_by(func.random())
                 .first()
             )
@@ -142,13 +157,26 @@ class DBInteractions:
                 next_question.id, next_question.user.name, next_question.question
             )
 
-    def count_all_pending_questions(self) -> int:
+    def count_all_pending_questions(self, is_super_chat=False) -> int:
         with session_manager(self.session) as session:
-            pending_questions = (
-                session.query(Question)
-                .filter(Question.is_replied == False)  # noqa: E712
-                .count()
-            )
+            if not is_super_chat:
+                pending_questions = (
+                    session.query(Question)
+                    .filter(
+                        Question.is_replied == False,  # noqa: E712
+                        Question.is_super_chat == False,  # noqa: E712
+                    )
+                    .count()
+                )
+            else:
+                pending_questions = (
+                    session.query(Question)
+                    .filter(
+                        Question.is_replied == False,  # noqa: E712
+                        Question.is_super_chat == True,  # noqa: E712
+                    )
+                    .count()
+                )
             return pending_questions
 
     def count_all_replied_questions(self) -> int:
@@ -238,7 +266,10 @@ class DBInteractions:
         with session_manager(self.session) as session:
             replied_questions = (
                 session.query(Question)
-                .filter(Question.is_replied == True)  # noqa: E712
+                .filter(
+                    Question.is_replied == True,  # noqa: E712
+                    Question.is_super_chat == False,  # noqa: E712
+                )
                 .order_by(Question.replied_ts.desc())
                 .limit(number_of_questions_to_return)
             )
@@ -254,20 +285,3 @@ if __name__ == "__main__":
 
     # Section only used for local testing
     db_interactions = DBInteractions(DATABASE_NAME)
-
-    next_question = db_interactions.get_next_pending_question()
-    print(f"{next_question.id}: {next_question.user}: {next_question.question}")
-
-    random_question = db_interactions.get_next_pending_question_randomly()
-    print(f"{random_question.id}: {random_question.user}: {random_question.question}")
-
-    pending_questions = db_interactions.count_all_pending_questions()
-    print(
-        f"pending questions number: {pending_questions}, type: {type(pending_questions)}"
-    )
-
-    # db_interactions.calculate_answer_average()
-    USER = "Artemio"
-    print(
-        f"Questions asked by {USER}: {db_interactions.count_questions_asked_by_user(user=USER)}"
-    )

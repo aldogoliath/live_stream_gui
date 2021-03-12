@@ -62,9 +62,8 @@ class YoutubeStreamThreadControl(StreamerThreadControl):
         db_filename=None,
     ):
         super().__init__(name="YoutubeStreamThread")
-        # Controls the periodicity of the call to get the live chat
-        # comments/questions
-        self._sleepperiod = 5.0
+        # Controls the periodicity of the call to get the live chat comments/questions
+        self._sleepperiod = 7.0
         self.set_youtube_thread_control_variables(
             questions_control_queue, live_chat_record_file, db_filename
         )
@@ -264,8 +263,6 @@ class YoutubeLiveChat:
 
         self.live_messages_page_token = response["nextPageToken"]
         # each item = https://developers.google.com/youtube/v3/live/docs/liveChatMessages#resource
-        # TODO: DELETE THIS after testing
-        log.debug(f"RESPONSE FROM API CALL LIVE CHAT: {response['items']}")
         for message in response["items"]:
             msg: str = message["snippet"]["displayMessage"]
             user: str = message["authorDetails"]["displayName"]
@@ -291,14 +288,14 @@ class YoutubeLiveChat:
             log.debug(f"Message: {msg}, published_at: {published_at_datetime}")
             if not published_at_datetime > self.start_time:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
-                return
+                continue
 
             # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
             msg = msg.lower()
 
-            # TODO: ADD SUPER CHAT handling
             if "superchat" in msg_type.lower():
-                log.warning("Pending Super Chat implementation")
+                self.register_superchat(user, msg)
+                continue
 
             if CHAT_FILTER_WORD not in msg:
                 live_chat_comment = f"{user}: {msg}"
@@ -316,8 +313,7 @@ class YoutubeLiveChat:
                 and published_at_datetime > open_questions_start_time
             ):
                 log.debug(f" User: {user}, sent a question: {msg}, at {published_at}")
-                # TODO: Add superchat event handling here (even if the user has reached its limit, register the
-                # question)
+                # TODO: Add superchat event handling here (register the question, since it's priority)
 
                 if self.has_limited_user_exceeded_question_count(user):
                     continue
@@ -330,6 +326,32 @@ class YoutubeLiveChat:
                     self.db.add_new_question(user_name=user, question_msg=cleaned_msg)
 
         return
+
+    def register_superchat(self, user: str, message: str) -> None:
+        # TODO: ADD SUPER CHAT exception handling
+        log.warning("Pending Super Chat implementation testing")
+        super_chat_msg: str = message["snippet"]["superChatDetails"]["userComment"]
+        currency: str = message["snippet"]["superChatDetails"]["currency"]
+        amount: str = message["snippet"]["superChatDetails"]["amountDisplayString"]
+
+        # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
+        # double spaces or leading/trailing spaces
+        if CHAT_FILTER_WORD in super_chat_msg:
+            super_chat_msg = " ".join(
+                super_chat_msg.replace(CHAT_FILTER_WORD, "").split()
+            )
+
+        if not super_chat_msg:
+            log.debug(f"For super chat event, user: {user}, left No Comment")
+            super_chat_msg = "NO COMMENT"
+        super_chat_msg = f"[SUPER CHAT] {user}: {super_chat_msg}"
+        # For super chat, we append the user name to the message for now and print it as well
+        print(
+            f"[SUPER CHAT], currency: {currency}, amount: {amount}. Message: {super_chat_msg}"
+        )
+        self.db.add_new_question(
+            user_name=user, question_msg=super_chat_msg, is_super_chat=True
+        )
 
     def has_limited_user_exceeded_question_count(self, user: str) -> bool:
         if any(limited_user in user.lower() for limited_user in LIMITED_USERS):
