@@ -34,7 +34,7 @@ class FileRecording:
     def create_banner_file(self):
         self.banner_file = get_resource(BANNER_FILENAME)
         log.debug("Creating banner file")
-        with open(self.banner_file, "w") as banner:
+        with open(self.banner_file, "w", encoding="utf-8") as banner:
             banner.writelines(
                 [
                     f"Buscador de preguntas previas: {QUESTION_LOOKUP_WEBPAGE}",
@@ -51,7 +51,7 @@ class FileRecording:
         self.live_chat_file = get_resource(self.live_chat_file)
 
         # Creating the file
-        with open(self.live_chat_file, "a"):
+        with open(self.live_chat_file, "a", encoding="utf-8"):
             pass
 
     def start_recording_timestamp_per_question_file(self, split_count: int) -> None:
@@ -81,14 +81,16 @@ class FileRecording:
 
         log.debug(f"Record file name: {self.record_file_name}")
         # Creating the file
-        with open(get_resource(self.record_file_name), "a"):
+        with open(get_resource(self.record_file_name), "a", encoding="utf-8"):
             pass
 
     def add_entry_to_record_file(self, replied_timestamp, question):
         adjusted_timestamp: timedelta = replied_timestamp - self.start_time_in_utc
         # Taking out mseconds
         record_to_store = str(adjusted_timestamp).split(".")[0] + " " + question
-        with open(get_resource(self.record_file_name), "a") as record_file:
+        with open(
+            get_resource(self.record_file_name), "a", encoding="utf-8"
+        ) as record_file:
 
             if self.file_number_of_lines >= int(YOUTUBE_COMMENT_MAX_LENGTH):
                 record_file.write(
@@ -111,7 +113,7 @@ class FileRecording:
         estimated_total_wait = estimated_total_wait or TIMESTAMP_PLACEHOLDER
         question_status_msg = "ABIERTAS." if open_questions else "CERRADAS."
 
-        with open(self.banner_file, "w") as banner:
+        with open(self.banner_file, "w", encoding="utf-8") as banner:
             banner.writelines(
                 [
                     f"Preguntas pendientes {pending_questions}",

@@ -122,7 +122,6 @@ class YoutubeLiveChat:
             )
         log.debug(f"Passed live_chat_record_file: {live_chat_record_file}")
         db_file = db_filename if db_filename else DATABASE_NAME
-        self.start_time = datetime.utcnow()
         self.service = self.get_authenticated_service_using_oath()
         self.channel_id = channel_id
         self.live_chat_id = (
@@ -130,6 +129,8 @@ class YoutubeLiveChat:
             if is_own_channel
             else self.get_active_live_chat_id_via_channel_id()
         )
+        self.start_time = datetime.utcnow()
+        log.debug(f"YoutubeLiveChat start time: {self.start_time}")
         self.live_chat_record_file = live_chat_record_file
         self.live_messages_page_token: str = None
         self.db = DBInteractions(db_filename=db_file)
@@ -242,9 +243,13 @@ class YoutubeLiveChat:
             )
             response = request.execute()
             total_results_pagination = int(response["pageInfo"]["totalResults"])
+            log.debug(f"Response was: \n{response}")
+
+            if not response["items"] or not response["nextPageToken"]:
+                break
+
             live_broadcast_next_token = response["nextPageToken"]
             log.debug(f"Next token: {live_broadcast_next_token}")
-            log.debug(f"Response was: \n{response}")
             if response["items"] and any(
                 item["status"]["lifeCycleStatus"] == "live"
                 for item in response["items"]
@@ -263,7 +268,7 @@ class YoutubeLiveChat:
             ):
                 break
             number_of_executions += 1
-            time.sleep(2.0)
+            time.sleep(0.3)
 
         raise UnableToGetLiveChatId(
             f"No live_chat_id was detected for api call {response['kind']}."
@@ -291,25 +296,25 @@ class YoutubeLiveChat:
             user: str = message["authorDetails"]["displayName"]
             msg_type: str = message["snippet"]["type"]
             published_at: str = message["snippet"]["publishedAt"]
-            log.debug(f"Original msg published_at: {published_at}")
 
             # To avoid datetime formatting problems, miliseconds and beyond (+xx:yy | Z) characters get dropped
-            published_at_satinized = published_at.split(".")[0]
-            log.debug(f"Sanitized published_at: {published_at_satinized}")
+            published_at_sanitized = published_at.split(".")[0]
 
             try:
                 published_at_datetime: datetime = datetime.fromisoformat(
-                    published_at_satinized
+                    published_at_sanitized
                 )
             except ValueError:
                 log.debug(
                     f"Couldn't read correctly the message: {msg}, with the next datetime: {published_at}. "
-                    f"Sanitized version looks like: {published_at_satinized}"
+                    f"Sanitized version looks like: {published_at_sanitized}"
                 )
                 continue
 
             log.debug(f"Message: {msg}, published_at: {published_at_datetime}")
-            if not published_at_datetime > self.start_time:
+            # If the next is True it means that the published message from the live chat is older than the datetime
+            # on which the Start Stream button was clicked
+            if self.start_time > published_at_datetime:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 continue
 
@@ -324,7 +329,9 @@ class YoutubeLiveChat:
                 live_chat_comment = f"{user}: {msg}"
                 # std.out is redirected to a widget in the GUI (live_chat_feed_text_box)
                 print(live_chat_comment)
-                with open(self.live_chat_record_file, "a") as live_chat_file:
+                with open(
+                    self.live_chat_record_file, "a", encoding="utf-8"
+                ) as live_chat_file:
                     live_chat_file.write(f"{live_chat_comment}\n")
 
             if open_questions_start_time is None:

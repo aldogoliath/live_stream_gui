@@ -329,8 +329,11 @@ class AppController:
             self.view.add_manual_question_button.setEnabled(True)
             self._start_youtube_live_chat_execution(self.record_file.live_chat_file)
         else:
-            # TODO: TEST THIS -> Click `Stop Stream` and the child thread doing the live chat api calls should stop
-            self.youtube_chat_streamer_thread.join()
+            # Check if the thread is alive first, before joining
+            if self.youtube_chat_streamer_thread.is_alive():
+                self.youtube_chat_streamer_thread.join()
+            else:
+                log.warning("Unable to join thread, it stopped running, check logs!")
             log.debug("Stopping stream")
             self.view.stream_timer.stop()
             self.view.table_refresh_timer.stop()

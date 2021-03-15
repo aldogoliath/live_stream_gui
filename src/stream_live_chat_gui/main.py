@@ -1,6 +1,7 @@
 from stream_live_chat_gui import create_db, get_log_file_name
 import logging
 
+# TODO: add logging for std.err
 logging.basicConfig(
     filename=get_log_file_name(),
     filemode="a",
