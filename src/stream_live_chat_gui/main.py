@@ -17,6 +17,10 @@ from stream_live_chat_gui.reply_gui import AnswersUi
 from stream_live_chat_gui.controller import AppController
 
 log = logging.getLogger(__name__)
+# TODO: still testing this handler
+handler_sys_error = logging.StreamHandler(sys.stderr)
+handler_sys_error.setLevel(logging.DEBUG)
+log.addHandler(handler_sys_error)
 
 
 def main():

@@ -8,6 +8,7 @@ from stream_live_chat_gui import (
     CHAT_FILTER_WORD,
     LIMITED_USERS,
     PRIVATE_TESTING,
+    LIVE_VIDEO_ID,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
 from queue import Queue
@@ -212,11 +213,14 @@ class YoutubeLiveChat:
             )
         return video_id
 
-    def get_active_live_chat_id_via_channel_id(self) -> str:
+    def get_active_live_chat_id_via_channel_id(self, video_id: str = None) -> str:
         """Since live chat """
-        # TODO: decide whether to deprecate this method in favor of the one using requests library after testing
-        # video_id = self.get_video_id()
-        video_id = self.get_video_id_no_api()
+        # This works for unlisted videos too
+        if not video_id:
+            # TODO: decide whether to deprecate this method in favor of the one using requests library after testing
+            # video_id = self.get_video_id()
+            video_id = self.get_video_id_no_api()
+
         log.debug(f"video_id: {video_id}")
         search_for_active_live_chat_id = self.service.videos().list(
             part="snippet, liveStreamingDetails", id=video_id
@@ -232,6 +236,20 @@ class YoutubeLiveChat:
         # https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#resource
         live_broadcast_next_token = None
         number_of_executions = 1
+        log.debug("Getting own channel live chat id for private testing")
+
+        if LIVE_VIDEO_ID:
+            try:
+                log.warning(
+                    f"Trying to find chat id using the manually given live video id: {LIVE_VIDEO_ID}"
+                )
+                return self.get_active_live_chat_id_via_channel_id(
+                    video_id=LIVE_VIDEO_ID
+                )
+            except Exception:
+                log.exception(
+                    f"Not live_chat_id was found with the ENV VAR given live_video_id: {LIVE_VIDEO_ID}"
+                )
 
         while True:
             request = self.service.liveBroadcasts().list(

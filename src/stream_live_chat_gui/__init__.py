@@ -30,6 +30,7 @@ QUESTION_LOOKUP_WEBPAGE = os.getenv("QUESTION_LOOKUP_WEBPAGE")
 CHAT_FILTER_WORD = os.getenv("CHAT_FILTER_WORD")
 YOUTUBE_DATETIME_FORMAT = os.getenv("YOUTUBE_DATETIME_FORMAT")
 PRIVATE_TESTING = os.getenv("PRIVATE_TESTING")
+LIVE_VIDEO_ID = os.getenv("LIVE_VIDEO_ID")
 # Checking that PRIVATE_TESTING envvar is set correctly
 if not PRIVATE_TESTING or not any(
     PRIVATE_TESTING.lower() == valid_option for valid_option in ["yes", "no"]
