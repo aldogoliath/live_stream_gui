@@ -15,6 +15,7 @@ import sys
 from PyQt5.QtWidgets import QApplication
 from stream_live_chat_gui.reply_gui import AnswersUi
 from stream_live_chat_gui.controller import AppController
+from stream_live_chat_gui.exception_hook import QtExceptHook
 
 log = logging.getLogger(__name__)
 # TODO: still testing this handler
@@ -29,6 +30,12 @@ def main():
 
     # Application instance
     gui = QApplication(sys.argv)  # To create executable
+
+    # https://gist.github.com/ssokolow/f5219e4c8e4bddbba4d08101969445d1
+    # To send sys.err for not handled exceptions to a pyqt message window
+    ehook = QtExceptHook()
+    ehook.enable()
+
     # The GUI instance
     win = AnswersUi()
 
