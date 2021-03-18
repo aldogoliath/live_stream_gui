@@ -9,6 +9,7 @@ from stream_live_chat_gui import (
     LIMITED_USERS,
     PRIVATE_TESTING,
     LIVE_VIDEO_ID,
+    QUESTIONS_LIMIT,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
 from queue import Queue
@@ -406,7 +407,7 @@ class YoutubeLiveChat:
             questions_already_asked_by_user: int = (
                 self.db.count_questions_asked_by_user(user=user)
             )
-            if questions_already_asked_by_user > 4:
+            if questions_already_asked_by_user >= QUESTIONS_LIMIT:
                 log.debug(
                     f"The user: {user}, has already asked {questions_already_asked_by_user}, questions"
                 )
