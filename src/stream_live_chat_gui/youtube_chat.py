@@ -341,7 +341,11 @@ class YoutubeLiveChat:
             msg = msg.lower()
 
             if "superchat" in msg_type.lower():
-                self.register_superchat(user, msg)
+                # Temporarily catching all exceptions here to test super chat implementation without breaking the thread
+                try:
+                    self.register_superchat(user, message)
+                except Exception as e:
+                    log.exception(f"Register super chat function failed with: {e}")
                 continue
 
             if CHAT_FILTER_WORD not in msg:
@@ -379,6 +383,8 @@ class YoutubeLiveChat:
     def register_superchat(self, user: str, message: str) -> None:
         # TODO: ADD SUPER CHAT exception handling
         log.warning("Pending Super Chat implementation testing")
+        log.debug(f"Super chat message contents: {message}")
+        log.debug(f"Super chat message type: {type(message)}")
         super_chat_msg: str = message["snippet"]["superChatDetails"]["userComment"]
         currency: str = message["snippet"]["superChatDetails"]["currency"]
         amount: str = message["snippet"]["superChatDetails"]["amountDisplayString"]

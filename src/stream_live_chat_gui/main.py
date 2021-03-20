@@ -18,10 +18,6 @@ from stream_live_chat_gui.controller import AppController
 from stream_live_chat_gui.exception_hook import QtExceptHook
 
 log = logging.getLogger(__name__)
-# TODO: still testing this handler
-handler_sys_error = logging.StreamHandler(sys.stderr)
-handler_sys_error.setLevel(logging.DEBUG)
-log.addHandler(handler_sys_error)
 
 
 def main():
