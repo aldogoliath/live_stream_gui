@@ -50,6 +50,7 @@ class AnswersUi(QMainWindow):
         self.table_refresh_timer = QTimer()
         self._create_close_dialog_box()
         self._create_camera_reset_resources()
+        self._create_live_chat_worker_error_message_box()
         self.show()
         sys.stdout = Stream(newText=self.on_update_text)
 
@@ -72,6 +73,17 @@ class AnswersUi(QMainWindow):
         self.camera_reset_dialog.setText("Please reset the camera!")
         self.camera_reset_dialog.setWindowTitle("CAMERA RESET TIMER")
         self.camera_reset_timer = QTimer()
+
+    def _create_live_chat_worker_error_message_box(self):
+        self.error_message_box = QMessageBox(self)
+        self.error_message_box.setText(
+            "Click stop->start Stream button to restart the live chat\nand to be able to open questions again.\n"
+            "REPLYING Questions is still possible"
+        )
+        self.error_message_box.setWindowTitle(
+            "Underlying Live Chat API Thread, CRASHED"
+        )
+        self.error_message_box.setStandardButtons(QMessageBox.Ok)
 
     def _create_top_layout(self) -> None:
         """

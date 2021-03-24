@@ -112,7 +112,6 @@ class YoutubeLiveChat:
         self,
         live_chat_record_file: str,
         channel_id: str = None,
-        is_own_channel: bool = True,
         db_filename: str = None,
     ):
         log.debug(f"PRIVATE_TESTING envvar is set to {PRIVATE_TESTING}")
@@ -123,6 +122,7 @@ class YoutubeLiveChat:
                 "channel_id nor own_channel where set.." "set one at least"
             )
         log.debug(f"Passed live_chat_record_file: {live_chat_record_file}")
+        self.live_stream_actual_start_time: datetime = None
         db_file = db_filename if db_filename else DATABASE_NAME
         self.service = self.get_authenticated_service_using_oath()
         self.channel_id = channel_id
@@ -201,6 +201,7 @@ class YoutubeLiveChat:
         return video_id
 
     def get_video_id_no_api(self) -> str:
+        log.debug("Getting video_id NOT using youtube api")
         youtube_live_stream_reply = requests.get(LIVE_STREAM_TARGET_URL)
         match = re.search(
             PATTERN_TO_FIND_VIDEO_ID_USING_REQUESTS, youtube_live_stream_reply.text
@@ -229,8 +230,14 @@ class YoutubeLiveChat:
         response = search_for_active_live_chat_id.execute()
         log.debug(f"Search for active live chat id response: {response}")
 
-        live_chat_id = response["items"][0]["liveStreamingDetails"]["activeLiveChatId"]
+        item_of_interest = response["items"][0]
+        log.debug(f"Item of interest: {item_of_interest}")
+
+        live_chat_id = item_of_interest["liveStreamingDetails"]["activeLiveChatId"]
         log.debug(f"live chat id: {live_chat_id}")
+        actual_start_time = item_of_interest["liveStreamingDetails"]["actualStartTime"]
+        self._set_actual_start_time(actual_start_time)
+
         return live_chat_id
 
     def get_own_channel_live_chat_id(self) -> str:
@@ -279,6 +286,7 @@ class YoutubeLiveChat:
                 for item in response["items"]:
                     if item["status"]["lifeCycleStatus"] == "live":
                         live_chat_id = item["snippet"]["liveChatId"]
+                        self._set_actual_start_time(item["snippet"]["actualStartTime"])
                         return live_chat_id
 
             if (
@@ -292,6 +300,14 @@ class YoutubeLiveChat:
         raise UnableToGetLiveChatId(
             f"No live_chat_id was detected for api call {response['kind']}."
             "\nMAKE SURE YOU ARE: \n1.- Live streaming already\n2.- The live stream video is SET to PUBLIC."
+        )
+
+    def _set_actual_start_time(self, actual_start_time: str) -> None:
+        log.debug(f"Given actual_start_time: {actual_start_time}")
+        actual_start_time = actual_start_time.strip("Z").split(".")[0]
+        self.live_stream_actual_start_time = datetime.fromisoformat(actual_start_time)
+        log.debug(
+            f"live_stream_actual_start_time (sanitized): {self.live_stream_actual_start_time}"
         )
 
     def get_live_chat_messages_threaded(

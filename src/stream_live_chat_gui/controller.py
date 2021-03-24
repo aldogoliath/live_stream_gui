@@ -40,6 +40,8 @@ class AppController:
         self.answer_average = None
         self.auto_reply_value: int = 0
         self.current_timer_per_question_id = dict()
+        # This avoids a message box being shown multiple times once we know the live chat api thread has failed once
+        self.error_message_box_already_shown: bool = False
         # Show camera reset dialog every 25 min
         self.view.camera_reset_timer.start(1500000)
 
@@ -117,7 +119,9 @@ class AppController:
         self.view.current_question_timer.timeout.connect(
             self.display_current_question_timer
         )
-        self.view.table_refresh_timer.timeout.connect(self.refresh_while_questions_open)
+        self.view.table_refresh_timer.timeout.connect(
+            self.refresh_while_stream_is_active
+        )
         self.view.start_stream_button.clicked.connect(self.stream_timer_control)
 
         self.view.camera_reset_timer.timeout.connect(self.view.camera_reset_dialog.show)
@@ -328,6 +332,7 @@ class AppController:
             self.view.youtube_open_questions.setEnabled(True)
             self.view.add_manual_question_button.setEnabled(True)
             self._start_youtube_live_chat_execution(self.record_file.live_chat_file)
+            self.error_message_box_already_shown = False
         else:
             # Check if the thread is alive first, before joining
             if self.youtube_chat_streamer_thread.is_alive():
@@ -385,10 +390,30 @@ class AppController:
         self.view.stream_time = self.view.stream_time.addSecs(1)
         self.view.stream_timer_label.setText(self.view.stream_time.toString())
 
-    def refresh_while_questions_open(self):
+    def refresh_while_stream_is_active(self):
         self.view.pending_questions_view.model().refresh()
         self.update_question_counters_and_banner()
-        # TODO: add refresh for banner_control.txt here
+        # Check that the underlying worker in charge of calling the youtube live chat api is alive
+        # if not, display a message.
+        if (
+            not self.error_message_box_already_shown
+            and not self.youtube_chat_streamer_thread.is_alive()
+        ):
+            self.view.error_message_box.show()
+            self.error_message_box_already_shown = True
+            # Two possible scenarios related to the `open_questions` status:
+            # 1. Thread fails when questions are open -> questions get closed immediately
+            # 2. Thread fails when questions are closed
+            # in either case (1 or 2) the open_questions checkbox gets disabled
+            if self.youtube_questions_open:
+                log.critical(
+                    "Closing questions due to youtube live chat api worker thread crash"
+                )
+                self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
+                self.youtube_questions_open = False
+
+            self.view.youtube_open_questions.setEnabled(False)
+
         return
 
     def display_answer_average_time(self):
@@ -501,7 +526,8 @@ class AppController:
         else:
             log.debug("Youtube stream, closing questions")
             self.view.youtube_open_questions.setText("Open questions")
-            self.open_close_question_control_queue.put(False)
+            if self.youtube_chat_streamer_thread.is_alive():
+                self.open_close_question_control_queue.put(False)
             self.youtube_questions_open = False
 
     # Unused for now, leaving it as reference
