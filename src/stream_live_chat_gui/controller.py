@@ -284,14 +284,17 @@ class AppController:
 
         # Add question and timestamp to record file
         # TODO: add workaround for reschedule last question scenario
-        # TODO: when integration with super chat, avoid registering such messages in the output file
-        if not is_super_chat:
-            self.record_file.add_entry_to_record_file(
-                replied_timestamp=datetime.utcnow(), question=question.question
-            )
+        self.record_file.add_entry_to_record_file(
+            replied_timestamp=datetime.utcnow(), question=question.question
+        )
         # reset pointers
         self.reset_pending_questions_pointers()
-        self.view.current_question_text.setText(question.question)
+        question_text = question.question
+
+        if is_super_chat:
+            question_text = "[SUPER CHAT] " + question_text
+
+        self.view.current_question_text.setText(question_text)
         self.db.mark_unmark_question_as_replied(question.id)
 
         self.display_answer_average_time()
@@ -410,7 +413,6 @@ class AppController:
                     "Closing questions due to youtube live chat api worker thread crash"
                 )
                 self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
-                self.youtube_questions_open = False
 
             self.view.youtube_open_questions.setEnabled(False)
 

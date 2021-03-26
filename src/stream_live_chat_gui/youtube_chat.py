@@ -415,7 +415,7 @@ class YoutubeLiveChat:
         if not super_chat_msg:
             log.debug(f"For super chat event, user: {user}, left No Comment")
             super_chat_msg = "NO COMMENT"
-        super_chat_msg = f"[SUPER CHAT] {user}: {super_chat_msg}"
+        super_chat_msg = f"{user}: {super_chat_msg}"
         # For super chat, we append the user name to the message for now and print it as well
         print(
             f"[SUPER CHAT], currency: {currency}, amount: {amount}. Message: {super_chat_msg}"
