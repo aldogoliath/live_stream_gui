@@ -115,6 +115,7 @@ class YoutubeLiveChat:
         db_filename: str = None,
     ):
         log.debug(f"PRIVATE_TESTING envvar is set to {PRIVATE_TESTING}")
+
         is_own_channel = True if PRIVATE_TESTING == "yes" else False
 
         if channel_id is None and not is_own_channel:
@@ -126,11 +127,26 @@ class YoutubeLiveChat:
         db_file = db_filename if db_filename else DATABASE_NAME
         self.service = self.get_authenticated_service_using_oath()
         self.channel_id = channel_id
-        self.live_chat_id = (
-            self.get_own_channel_live_chat_id()
-            if is_own_channel
-            else self.get_active_live_chat_id_via_channel_id()
-        )
+
+        if LIVE_VIDEO_ID:
+            try:
+                log.warning(
+                    f"Trying to find chat id using the manually given live video id: {LIVE_VIDEO_ID}"
+                )
+                self.live_chat_id = self.get_active_live_chat_id_via_channel_id(
+                    video_id=LIVE_VIDEO_ID
+                )
+            except Exception:
+                log.exception(
+                    f"Not live_chat_id was found with the ENV VAR given live_video_id: {LIVE_VIDEO_ID}"
+                )
+        else:
+            self.live_chat_id = (
+                self.get_unlisted_video_live_chat_id()
+                if is_own_channel
+                else self.get_active_live_chat_id_via_channel_id()
+            )
+
         self.start_time = datetime.utcnow()
         log.debug(f"YoutubeLiveChat start time: {self.start_time}")
         self.live_chat_record_file = live_chat_record_file
@@ -240,24 +256,11 @@ class YoutubeLiveChat:
 
         return live_chat_id
 
-    def get_own_channel_live_chat_id(self) -> str:
+    def get_unlisted_video_live_chat_id(self) -> str:
         # https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#resource
         live_broadcast_next_token = None
         number_of_executions = 1
         log.debug("Getting own channel live chat id for private testing")
-
-        if LIVE_VIDEO_ID:
-            try:
-                log.warning(
-                    f"Trying to find chat id using the manually given live video id: {LIVE_VIDEO_ID}"
-                )
-                return self.get_active_live_chat_id_via_channel_id(
-                    video_id=LIVE_VIDEO_ID
-                )
-            except Exception:
-                log.exception(
-                    f"Not live_chat_id was found with the ENV VAR given live_video_id: {LIVE_VIDEO_ID}"
-                )
 
         while True:
             request = self.service.liveBroadcasts().list(

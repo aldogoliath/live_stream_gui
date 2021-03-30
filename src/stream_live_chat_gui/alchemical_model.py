@@ -25,8 +25,23 @@ class AlchemicalTableModel(QAbstractTableModel):
         self.count = None
         self.sort = None
         self.filter = None
+        # The relation between 'question'->'user' table is done through the foreign key "user_id" on the question table
+        # If more foreign keys are added into the Question model, consider changing this conditional
+        self.column_name_w_foreign_key = (
+            AlchemicalTableModel.get_column_name_w_foreign_key(model)
+        )
 
         self.refresh()
+
+    @staticmethod
+    def get_column_name_w_foreign_key(model) -> str:
+        for column in model.__table__.columns:
+            if model.__table__.foreign_keys == column.foreign_keys:
+                column_name_w_foreign_key = column.name
+                log.debug(f"{column_name_w_foreign_key}")
+                return column_name_w_foreign_key
+        log.warning(f"No foreign key reference was found for the model: {model}")
+        return "UNKNOWN"
 
     def headerData(self, column, orientation, role):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
@@ -96,7 +111,13 @@ class AlchemicalTableModel(QAbstractTableModel):
             return QVariant()
         row = self.results[index.row()]
         name = self.fields[index.column()].column_name
-        value = str(getattr(row, name))
+
+        if name == self.column_name_w_foreign_key:
+            # TODO: find a programmatical way to find the user name reference
+            value = row.user.name
+        else:
+            value = str(getattr(row, name))
+
         return value
 
     def setData(self, index, value, role=None) -> bool:

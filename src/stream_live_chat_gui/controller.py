@@ -237,6 +237,7 @@ class AppController:
                 f"Number of pending super chat events: {number_of_pending_super_chats}"
             )
             self.reply_question(is_super_chat=True)
+            return
 
         self.auto_reply_value += 1
         log.debug(f"Reply auto, auto_reply_value: {self.auto_reply_value}")
