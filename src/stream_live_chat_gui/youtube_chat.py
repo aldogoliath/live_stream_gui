@@ -37,6 +37,9 @@ API_SERVICE_NAME, API_VERSION = "youtube", "v3"
 LIVE_STREAM_TARGET_URL = f"https://www.youtube.com/channel/{YOUTUBE_CHANNEL_ID}/live"
 PATTERN_TO_FIND_VIDEO_ID_USING_REQUESTS = r'"videoId":"(?P<video_id>.*)","broadcastId"'
 LIVE_BROADCASTS_LIST_MAX_RESULTS = 50
+PATTERN_FOR_CHAT_FILTER_WORD = re.compile(
+    f"\s?{CHAT_FILTER_WORD}\s?", re.IGNORECASE  # noqa: W605
+)
 
 
 class UnableToGetVideoId(Exception):
@@ -356,9 +359,6 @@ class YoutubeLiveChat:
                 log.debug(f"stale message: {msg}, published_at: {published_at}")
                 continue
 
-            # Normalize (lower-case) the message to filter out the CHAT_FILTER_WORD
-            msg = msg.lower()
-
             if "superchat" in msg_type.lower():
                 # Temporarily catching all exceptions here to test super chat implementation without breaking the thread
                 try:
@@ -367,7 +367,7 @@ class YoutubeLiveChat:
                     log.exception(f"Register super chat function failed with: {e}")
                 continue
 
-            if CHAT_FILTER_WORD not in msg:
+            if not PATTERN_FOR_CHAT_FILTER_WORD.search(msg):
                 live_chat_comment = f"{user}: {msg}"
                 # std.out is redirected to a widget in the GUI (live_chat_feed_text_box)
                 print(live_chat_comment)
@@ -381,7 +381,7 @@ class YoutubeLiveChat:
                 continue
 
             if (
-                CHAT_FILTER_WORD in msg
+                PATTERN_FOR_CHAT_FILTER_WORD.search(msg)
                 and published_at_datetime > open_questions_start_time
             ):
                 log.debug(f" User: {user}, sent a question: {msg}, at {published_at}")
@@ -392,7 +392,7 @@ class YoutubeLiveChat:
 
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
                 # double spaces or leading/trailing spaces
-                cleaned_msg = " ".join(msg.replace(CHAT_FILTER_WORD, "").split())
+                cleaned_msg = re.sub(PATTERN_FOR_CHAT_FILTER_WORD, " ", msg).strip()
                 # If after cleaning it, the msg is not an empty string, then register it
                 if cleaned_msg:
                     self.db.add_new_question(user_name=user, question_msg=cleaned_msg)
@@ -410,10 +410,10 @@ class YoutubeLiveChat:
 
         # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
         # double spaces or leading/trailing spaces
-        if CHAT_FILTER_WORD in super_chat_msg:
-            super_chat_msg = " ".join(
-                super_chat_msg.replace(CHAT_FILTER_WORD, "").split()
-            )
+        if PATTERN_FOR_CHAT_FILTER_WORD.search(super_chat_msg):
+            super_chat_msg = re.sub(
+                PATTERN_FOR_CHAT_FILTER_WORD, " ", super_chat_msg
+            ).strip()
 
         if not super_chat_msg:
             log.debug(f"For super chat event, user: {user}, left No Comment")
