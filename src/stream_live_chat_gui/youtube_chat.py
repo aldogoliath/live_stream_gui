@@ -202,8 +202,11 @@ class YoutubeLiveChat:
             API_SERVICE_NAME, API_VERSION, credentials=credentials, cache=MemoryCache()
         )
 
+    # Not currently used
     def get_video_id(self) -> str:
         log.debug(f"Searching for video_id given channel_id: {self.channel_id}")
+        # https://developers.google.com/youtube/v3/determine_quota_cost
+        # Quota: search().list(...) == 100
         search_for_video_id = self.service.search().list(
             part="snippet", channelId=self.channel_id, eventType="live", type="video"
         )
@@ -243,6 +246,8 @@ class YoutubeLiveChat:
             video_id = self.get_video_id_no_api()
 
         log.debug(f"video_id: {video_id}")
+        # https://developers.google.com/youtube/v3/determine_quota_cost
+        # Quota: videos().list(...) == 1
         search_for_active_live_chat_id = self.service.videos().list(
             part="snippet, liveStreamingDetails", id=video_id
         )
@@ -311,15 +316,21 @@ class YoutubeLiveChat:
     def _set_actual_start_time(self, actual_start_time: str) -> None:
         log.debug(f"Given actual_start_time: {actual_start_time}")
         actual_start_time = actual_start_time.strip("Z").split(".")[0]
-        self.live_stream_actual_start_time = datetime.fromisoformat(actual_start_time)
+        self.live_stream_actual_start_time: datetime = datetime.fromisoformat(
+            actual_start_time
+        )
         log.debug(
             f"live_stream_actual_start_time (sanitized): {self.live_stream_actual_start_time}"
         )
+
+    def get_actual_start_time(self) -> datetime:
+        return self.live_stream_actual_start_time
 
     def get_live_chat_messages_threaded(
         self, open_questions_start_time: Optional[datetime]
     ) -> None:
         # https://developers.google.com/youtube/v3/live/docs/liveChatMessages/list
+        # Quota == 1 (?)
         request = self.service.liveChatMessages().list(
             liveChatId=self.live_chat_id,
             part="snippet, authorDetails",

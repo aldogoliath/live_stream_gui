@@ -1,11 +1,17 @@
 # from stream_live_chat_gui.twitch_chat import TwitchStreamThreadControl
 from stream_live_chat_gui.youtube_chat import (
     YoutubeStreamThreadControl,
+    YoutubeLiveChat,
     UnableToGetVideoId,
     UnableToGetLiveChatId,
 )
 from stream_live_chat_gui.db_interactions import DBInteractions
-from stream_live_chat_gui import QuestionTuple, YOUTUBER_NAME, DATABASE_NAME
+from stream_live_chat_gui import (
+    QuestionTuple,
+    YOUTUBER_NAME,
+    DATABASE_NAME,
+    YOUTUBE_CHANNEL_ID,
+)
 from stream_live_chat_gui.record_files import FileRecording
 from PyQt5.QtCore import QItemSelectionModel, QModelIndex, QTime, Qt
 from PyQt5.QtWidgets import QTableView
@@ -44,9 +50,6 @@ class AppController:
         self.error_message_box_already_shown: bool = False
         # Show camera reset dialog every 25 min
         self.view.camera_reset_timer.start(1500000)
-
-        # To account for youtube failures and the need to split the files on which the questions are saved
-        self.start_stream_button_click_counter: int = 0
 
         # Open/Close question control (inter-thread communication)
         self.open_close_question_control_queue = Queue(maxsize=1)
@@ -283,11 +286,6 @@ class AppController:
         else:
             question: QuestionTuple = self.db.get_next_pending_question_randomly()
 
-        # Add question and timestamp to record file
-        # TODO: add workaround for reschedule last question scenario
-        self.record_file.add_entry_to_record_file(
-            replied_timestamp=datetime.utcnow(), question=question.question
-        )
         # reset pointers
         self.reset_pending_questions_pointers()
         question_text = question.question
@@ -297,6 +295,16 @@ class AppController:
 
         self.view.current_question_text.setText(question_text)
         self.db.mark_unmark_question_as_replied(question.id)
+
+        # This synchronizes the replied questions to the actual start time of the live stream
+        try:
+            # Query for all replied questions (includes schat events)
+            replied_questions_w_timestamp = self.db.get_replied_questions_w_replied_ts()
+            self.record_file.generate_file_w_timestamp_synchronized_replied_questions(
+                replied_questions_w_timestamp
+            )
+        except Exception as e:
+            log.exception(f"Generation of questions with timestamps file failed: {e}")
 
         self.display_answer_average_time()
         self.display_wait_average_time()
@@ -324,18 +332,18 @@ class AppController:
             log.debug("Starting stream")
             self.view.stream_timer.start(1000)
             self.view.start_stream_button.setText("Stop Stream")
-            start_time = datetime.utcnow()
-            self.record_file = FileRecording(
-                start_time, self.start_stream_button_click_counter
-            )
+            self.record_file = FileRecording()
 
-            self.start_stream_button_click_counter += 1
-            log.debug(
-                f"Start stream button counter: {self.start_stream_button_click_counter}"
-            )
             self.view.youtube_open_questions.setEnabled(True)
             self.view.add_manual_question_button.setEnabled(True)
             self._start_youtube_live_chat_execution(self.record_file.live_chat_file)
+
+            # It's assumed that the first call to start fetching live chat messages has been succesful,
+            # therefore we instantiate a second client only to get the actual_start_time.
+            # It's suboptimal since it could be done by using the already created client, but this way is simpler
+            actual_start_time = AppController._get_live_stream_actual_start_time()
+
+            self.record_file.set_start_time(actual_start_time)
             self.error_message_box_already_shown = False
         else:
             # Check if the thread is alive first, before joining
@@ -376,10 +384,6 @@ class AppController:
             self.view.start_stream_button.setChecked(False)
             self.view.start_stream_button.setText("Start Stream")
 
-            self.start_stream_button_click_counter -= 1
-            log.debug(
-                f"Decreasing start_stream_button_click_counter to: {self.start_stream_button_click_counter}"
-            )
             # RESET TIMER ?
             self.view.stream_timer.stop()
             return
@@ -389,6 +393,13 @@ class AppController:
 
         # Refresh table view/counters every 2.5 seconds
         self.view.table_refresh_timer.start(2500)
+
+    @staticmethod
+    def _get_live_stream_actual_start_time() -> datetime:
+        yt = YoutubeLiveChat(
+            live_chat_record_file="some_file", channel_id=YOUTUBE_CHANNEL_ID
+        )
+        return yt.get_actual_start_time()
 
     def display_stream_timer(self):
         self.view.stream_time = self.view.stream_time.addSecs(1)

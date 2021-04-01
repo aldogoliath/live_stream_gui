@@ -279,6 +279,20 @@ class DBInteractions:
             ]
             return r_questions
 
+    def get_replied_questions_w_replied_ts(self) -> list[tuple[str, datetime]]:
+        with session_manager(self.session) as session:
+            replied_questions = (
+                session.query(Question)
+                .filter(Question.is_replied == True)  # noqa: E712
+                .order_by(Question.replied_ts.asc())
+                .all()
+            )
+            replied_questions_w_timestamp = [
+                (question.question, question.replied_ts)
+                for question in replied_questions
+            ]
+            return replied_questions_w_timestamp
+
 
 if __name__ == "__main__":
     from stream_live_chat_gui import DATABASE_NAME

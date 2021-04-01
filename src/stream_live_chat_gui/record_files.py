@@ -7,29 +7,31 @@ from stream_live_chat_gui import (
     QUESTION_LOOKUP_WEBPAGE,
     BANNER_FILENAME,
     LIVE_CHAT_RECORD_FILENAME,
+    ACTUAL_START_TIMESTAMP_ADJUSTED_QUESTIONS_TIMESTAMP_FILENAME,
 )
-import re
 
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
-TIMESTAMP_PER_QUESTION_FILE_SUFFIX = "Replied_"
 TIMESTAMP_PLACEHOLDER = "--:--:--"
-RECORDING_FILE_MATCH = (
-    r"(?P<date>\d+)_Replied_(?P<stream_counter_and_extension>\d+.txt)"
-)
+SPACERS = "=" * 20
 
 
 class FileRecording:
-    def __init__(self, start_time_in_utc: datetime, split_count: int):
+    def __init__(self):
         self.record_file_name: str = None
-        self.start_time_in_utc = start_time_in_utc
         self.file_number_of_lines = 0
         self.banner_file: str = None
+        # This attribute is set after this class is instantiated
+        self.start_time_in_utc = None
         self.create_banner_file()
-        self.set_live_chat_file()
-        self.start_recording_timestamp_per_question_file(split_count)
+        self.create_live_chat_file()
+        self.create_actual_timestamps_replied_questions_file()
         self.questions_open: bool = False
+
+    def set_start_time(self, start_time_in_utc: datetime):
+        log.debug(f"For FileRecording given start time: {start_time_in_utc}")
+        self.start_time_in_utc = start_time_in_utc
 
     def create_banner_file(self):
         self.banner_file = get_resource(BANNER_FILENAME)
@@ -42,7 +44,20 @@ class FileRecording:
                 ]
             )
 
-    def set_live_chat_file(self):
+    def create_actual_timestamps_replied_questions_file(self):
+        self.replied_questions_w_timestamp_file = get_time_adjusted_filename(
+            ACTUAL_START_TIMESTAMP_ADJUSTED_QUESTIONS_TIMESTAMP_FILENAME, "txt"
+        )
+        # To make the file be under resources directory
+        self.replied_questions_w_timestamp_file = get_resource(
+            self.replied_questions_w_timestamp_file
+        )
+
+        # Creating the file
+        with open(self.replied_questions_w_timestamp_file, "a", encoding="utf-8"):
+            pass
+
+    def create_live_chat_file(self):
         log.debug("Searching for live chat record file")
         self.live_chat_file = get_time_adjusted_filename(
             LIVE_CHAT_RECORD_FILENAME, "txt"
@@ -54,52 +69,32 @@ class FileRecording:
         with open(self.live_chat_file, "a", encoding="utf-8"):
             pass
 
-    def start_recording_timestamp_per_question_file(self, split_count: int) -> None:
-        """
-        Only need to confirm if a file has been created already for this session/day,
-        so no new one is created since the show covers 2 datetimes.
-        What changes here in the filename, besides the possible different split_count is mainly the
-        file_datetime. It can point to yesterday or today.
-        """
-        record_file_name = (
-            f"{get_time_adjusted_filename(TIMESTAMP_PER_QUESTION_FILE_SUFFIX, 'txt')}"
-        )
-
-        is_previous_file = re.match(RECORDING_FILE_MATCH, record_file_name)
-
-        if not is_previous_file:
-            log.debug(f"Creating new record file name, prefix: {record_file_name}")
-            self.record_file_name = f"{record_file_name}{split_count}.txt"
-        else:
-            log.debug(
-                f"Previous file existed {record_file_name}, placing new counter: {split_count}"
-            )
-            self.record_file_name = record_file_name.replace(
-                is_previous_file.group("stream_counter_and_extension"),
-                f"{split_count}.txt",
-            )
-
-        log.debug(f"Record file name: {self.record_file_name}")
-        # Creating the file
-        with open(get_resource(self.record_file_name), "a", encoding="utf-8"):
-            pass
-
-    def add_entry_to_record_file(self, replied_timestamp, question):
-        adjusted_timestamp: timedelta = replied_timestamp - self.start_time_in_utc
-        # Taking out mseconds
-        record_to_store = str(adjusted_timestamp).split(".")[0] + " " + question
+    def generate_file_w_timestamp_synchronized_replied_questions(
+        self, replied_questions_w_timestamp: list[tuple[str, datetime]]
+    ):
         with open(
-            get_resource(self.record_file_name), "a", encoding="utf-8"
-        ) as record_file:
-
-            if self.file_number_of_lines >= int(YOUTUBE_COMMENT_MAX_LENGTH):
-                record_file.write(
-                    f"\n==================== {self.file_number_of_lines} ==================\n\n"
+            self.replied_questions_w_timestamp_file, "w", encoding="utf-8"
+        ) as question_record_file:
+            for replied_question_tuple in replied_questions_w_timestamp:
+                # Where index 0 is the question text and the -1 is the replied_timestamp datetime value
+                question = replied_question_tuple[0]
+                replied_timestamp = replied_question_tuple[-1]
+                adjusted_timestamp: timedelta = (
+                    replied_timestamp - self.start_time_in_utc
                 )
-                self.file_number_of_lines = 0
 
-            record_file.write(record_to_store + "\n")
-            self.file_number_of_lines += 1
+                # Taking out mseconds, if any
+                record_to_store = str(adjusted_timestamp).split(".")[0] + " " + question
+
+                if self.file_number_of_lines >= int(YOUTUBE_COMMENT_MAX_LENGTH):
+                    question_record_file.write(
+                        f"\n{SPACERS} {self.file_number_of_lines} {SPACERS}\n\n"
+                    )
+                    self.file_number_of_lines = 0
+
+                question_record_file.write(record_to_store + "\n")
+
+                self.file_number_of_lines += 1
 
     def update_banner(
         self,
@@ -126,5 +121,5 @@ class FileRecording:
 
 
 if __name__ == "__main__":
-    algo = FileRecording(datetime.utcnow(), 0)
+    test = FileRecording()
     pass
