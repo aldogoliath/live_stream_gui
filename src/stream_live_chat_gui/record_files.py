@@ -20,10 +20,9 @@ SPACERS = "=" * 20
 class FileRecording:
     def __init__(self):
         self.record_file_name: str = None
-        self.file_number_of_lines = 0
         self.banner_file: str = None
-        # This attribute is set after this class is instantiated
-        self.start_time_in_utc = None
+        # This attribute needs to be set after this class is instantiated, the value initiated with is a placeholder
+        self.start_time_in_utc = datetime.utcnow()
         self.create_banner_file()
         self.create_live_chat_file()
         self.create_actual_timestamps_replied_questions_file()
@@ -72,6 +71,8 @@ class FileRecording:
     def generate_file_w_timestamp_synchronized_replied_questions(
         self, replied_questions_w_timestamp: list[tuple[str, datetime]]
     ):
+        # Used to count characters in the file to be written considering YOUTUBE_COMMENT_MAX_LENGTH
+        total_line_length = 0
         with open(
             self.replied_questions_w_timestamp_file, "w", encoding="utf-8"
         ) as question_record_file:
@@ -84,17 +85,22 @@ class FileRecording:
                 )
 
                 # Taking out mseconds, if any
-                record_to_store = str(adjusted_timestamp).split(".")[0] + " " + question
+                record_to_store = (
+                    str(adjusted_timestamp).split(".")[0] + " " + question + "\n"
+                )
+                total_line_length += len(record_to_store)
+                print(f"{total_line_length=}")
 
-                if self.file_number_of_lines >= int(YOUTUBE_COMMENT_MAX_LENGTH):
+                if total_line_length >= int(YOUTUBE_COMMENT_MAX_LENGTH):
                     question_record_file.write(
-                        f"\n{SPACERS} {self.file_number_of_lines} {SPACERS}\n\n"
+                        f"\n{SPACERS} {total_line_length} {SPACERS}\n\n"
                     )
-                    self.file_number_of_lines = 0
+                    # The counter is reset to the last line that we know that, if it is count, breaks the
+                    # limit (YOUTUBE_COMMENT_MAX_LENGTH). If the counter would be reset to 0 instead, the last line's
+                    # length wouldn't be accounted for in the next iteration.
+                    total_line_length = len(record_to_store)
 
-                question_record_file.write(record_to_store + "\n")
-
-                self.file_number_of_lines += 1
+                question_record_file.write(record_to_store)
 
     def update_banner(
         self,
