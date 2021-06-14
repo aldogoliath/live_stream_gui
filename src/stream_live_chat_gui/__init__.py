@@ -46,6 +46,9 @@ if not PRIVATE_TESTING or not any(
 # Can be deleted
 TEST_DB_FILENAME = os.getenv("TEST_DB_FILENAME")
 LIMITED_USERS = [user.strip().lower() for user in os.getenv("LIMITED_USERS").split(",")]
+TOP_MESSAGE_OF_TIMESTAMP_FILE = (
+    "00:00:00 " + (os.getenv("TOP_MESSAGE_OF_TIMESTAMP_FILE") or "Start") + "\n"
+)
 
 
 def search_files_in_resources_directory_given_extension(extension: str) -> list[str]:

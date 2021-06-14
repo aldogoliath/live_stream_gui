@@ -8,6 +8,7 @@ from stream_live_chat_gui import (
     BANNER_FILENAME,
     LIVE_CHAT_RECORD_FILENAME,
     ACTUAL_START_TIMESTAMP_ADJUSTED_QUESTIONS_TIMESTAMP_FILENAME,
+    TOP_MESSAGE_OF_TIMESTAMP_FILE,
 )
 
 
@@ -72,10 +73,12 @@ class FileRecording:
         self, replied_questions_w_timestamp: list[tuple[str, datetime]]
     ):
         # Used to count characters in the file to be written considering YOUTUBE_COMMENT_MAX_LENGTH
-        total_line_length = 0
+        # Start with the first line which is an static value defined by the user
+        total_line_length = len(TOP_MESSAGE_OF_TIMESTAMP_FILE)
         with open(
             self.replied_questions_w_timestamp_file, "w", encoding="utf-8"
         ) as question_record_file:
+            question_record_file.write(TOP_MESSAGE_OF_TIMESTAMP_FILE)
             for replied_question_tuple in replied_questions_w_timestamp:
                 # Where index 0 is the question text and the -1 is the replied_timestamp datetime value
                 question = replied_question_tuple[0]
@@ -88,16 +91,17 @@ class FileRecording:
                 record_to_store = (
                     str(adjusted_timestamp).split(".")[0] + " " + question + "\n"
                 )
-                total_line_length += len(record_to_store)
+                length_of_record = len(record_to_store)
+                total_line_length += length_of_record
 
                 if total_line_length >= int(YOUTUBE_COMMENT_MAX_LENGTH):
                     question_record_file.write(
-                        f"\n{SPACERS} {total_line_length} {SPACERS}\n\n"
+                        f"\n{SPACERS} {total_line_length - length_of_record} {SPACERS}\n\n"
                     )
                     # The counter is reset to the last line that we know that, if it is count, breaks the
                     # limit (YOUTUBE_COMMENT_MAX_LENGTH). If the counter would be reset to 0 instead, the last line's
                     # length wouldn't be accounted for in the next iteration.
-                    total_line_length = len(record_to_store)
+                    total_line_length = length_of_record
 
                 question_record_file.write(record_to_store)
 

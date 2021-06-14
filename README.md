@@ -112,6 +112,8 @@ PRIVATE_TESTING="no"
 LIVE_VIDEO_ID="<SOME_LIVE_VIDEO_ID>"
 # The upper limit (questions number) a user can submit per stream
 QUESTIONS_LIMIT="4"
+# Message that shows up together with the start of the video timestamp (00:00:00)
+TOP_MESSAGE_OF_TIMESTAMP_FILE="Start of stream"
 
 
 ### Youtube API creds related config:
