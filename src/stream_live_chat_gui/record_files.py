@@ -89,7 +89,6 @@ class FileRecording:
                     str(adjusted_timestamp).split(".")[0] + " " + question + "\n"
                 )
                 total_line_length += len(record_to_store)
-                print(f"{total_line_length=}")
 
                 if total_line_length >= int(YOUTUBE_COMMENT_MAX_LENGTH):
                     question_record_file.write(
