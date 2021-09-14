@@ -50,6 +50,8 @@ class AppController:
         self.error_message_box_already_shown: bool = False
         # Show camera reset dialog every 25 min
         self.view.camera_reset_timer.start(1500000)
+        # Start with no question limit per session
+        self.session_questions_limit = 0
 
         # Open/Close question control (inter-thread communication)
         self.open_close_question_control_queue = Queue(maxsize=1)
@@ -165,6 +167,12 @@ class AppController:
         self.view.pending_questions_view.model().refresh()
         self.update_question_counters_and_banner()
         self.view.question_manual_input.clear()
+
+    def add_questions_limit_per_session(self):
+        questions_limit = self.view.questions_limit_input.text()
+        if not questions_limit:
+            return
+        self.session_questions_limit = int(questions_limit)
 
     def reschedule_last(self):
         """
@@ -408,6 +416,14 @@ class AppController:
     def refresh_while_stream_is_active(self):
         self.view.pending_questions_view.model().refresh()
         self.update_question_counters_and_banner()
+
+        if (
+            self.view.youtube_open_questions.isChecked()
+            and self.session_questions_limit != 0
+            and self.check_session_question_limit()
+        ):
+            self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
+
         # Check that the underlying worker in charge of calling the youtube live chat api is alive
         # if not, display a message.
         if (
@@ -429,6 +445,9 @@ class AppController:
             self.view.youtube_open_questions.setEnabled(False)
 
         return
+
+    def check_session_question_limit(self):
+        return self.db.count_all_pending_questions() >= self.session_questions_limit
 
     def display_answer_average_time(self):
         # TODO: Do calculation of wait average here:
@@ -532,13 +551,20 @@ class AppController:
             f"Checking for {AppController.youtube_chat_checkbox_click_action.__name__}"
         )
         if state == Qt.Checked:
-            log.debug("Youtube stream, opening questions")
-            self.open_close_question_control_queue.put(True)
+            self.add_questions_limit_per_session()
+            log.debug(
+                f"Youtube stream, opening questions, with limit: {self.session_questions_limit}"
+            )
+            self.open_close_question_control_queue.put(
+                (True, self.session_questions_limit)
+            )
             self.view.youtube_open_questions.setText("Close questions")
             self.youtube_questions_open = True
 
         else:
             log.debug("Youtube stream, closing questions")
+            self.session_questions_limit = 0
+            self.view.questions_limit_input.clear()
             self.view.youtube_open_questions.setText("Open questions")
             if self.youtube_chat_streamer_thread.is_alive():
                 self.open_close_question_control_queue.put(False)

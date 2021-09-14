@@ -11,9 +11,10 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QPlainTextEdit,
+    QLineEdit,
 )
-from PyQt5.QtGui import QFont, QTextCursor
-from PyQt5.QtCore import Qt, QTimer, QTime, QObject, pyqtSignal
+from PyQt5.QtGui import QFont, QTextCursor, QRegExpValidator
+from PyQt5.QtCore import Qt, QObject, QRegExp, QTimer, QTime, pyqtSignal
 from stream_live_chat_gui import (
     get_db_session,
     AlchemizedModelColumn,
@@ -91,6 +92,9 @@ class AnswersUi(QMainWindow):
         - Start/Stop (general) Stream button (QPushButton)
         - Text Box (Scroll area widget) that shows current question being answered
         - Text Box (Scroll area widget) that shows ???
+        - QVBoxLayout:
+          - Label Box (Input for question limit for a session)
+          - Label to display text regarding the session question limit
         """
         top_layout = QHBoxLayout()
 
@@ -99,15 +103,30 @@ class AnswersUi(QMainWindow):
         self.start_stream_button.setCheckable(True)
         self.current_question_text = QLabel()
         self.current_question_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.current_question_display = QScrollArea()
+        current_question_display = QScrollArea()
         self._add_text_box_with_scroll_area(
             self.current_question_text,
-            self.current_question_display,
+            current_question_display,
             (300, 150, 400, 300),
         )
 
+        questions_limit_per_session_block = QVBoxLayout()
+        self.questions_limit_input = QLineEdit(self)
+        self.questions_limit_input.setMaximumSize(200, 50)
+        self.questions_limit_input.setAlignment(Qt.AlignHCenter)
+        regexp = QRegExp("^([1-9][0-9]?)$")
+        validator = QRegExpValidator(regexp)
+        self.questions_limit_input.setValidator(validator)
+        self.questions_limit_per_session_label = QLabel("Session questions limit")
+
+        questions_limit_per_session_block.addWidget(self.questions_limit_input)
+        questions_limit_per_session_block.addWidget(
+            self.questions_limit_per_session_label
+        )
+
         top_layout.addWidget(self.start_stream_button)
-        top_layout.addWidget(self.current_question_display)
+        top_layout.addWidget(current_question_display)
+        top_layout.addLayout(questions_limit_per_session_block)
 
         # Add layout to the general one
         self.general_layout.addLayout(top_layout)
@@ -160,21 +179,19 @@ class AnswersUi(QMainWindow):
         """
         central_layout = QHBoxLayout()
 
-        self.pending_questions_model = self.__alchemized_model_helper()
-        self.pending_questions_model.setFilter(Question.is_replied == 0)
+        pending_questions_model = self.__alchemized_model_helper()
+        pending_questions_model.setFilter(Question.is_replied == 0)
         self.pending_questions_view = QTableView()
-        self.pending_questions_view.setModel(self.pending_questions_model)
+        self.pending_questions_view.setModel(pending_questions_model)
         self.pending_questions_view.setSelectionBehavior(QTableView.SelectRows)
 
-        self.replied_questions_model = self.__alchemized_model_helper()
-        self.replied_questions_model.setFilter(Question.is_replied == 1)
+        replied_questions_model = self.__alchemized_model_helper()
+        replied_questions_model.setFilter(Question.is_replied == 1)
         # '0' is the default id column number, but for the replied table we order by replied timestamp
         column_index_to_sort_by: int = self._get_column_index("replied_ts") or 0
-        self.replied_questions_model.setSorting(
-            column_index_to_sort_by, Qt.AscendingOrder
-        )
+        replied_questions_model.setSorting(column_index_to_sort_by, Qt.AscendingOrder)
         self.replied_questions_view = QTableView()
-        self.replied_questions_view.setModel(self.replied_questions_model)
+        self.replied_questions_view.setModel(replied_questions_model)
         self.replied_questions_view.setSelectionBehavior(QTableView.SelectRows)
 
         # live chat feed https://stackoverflow.com/a/44433766/2706103

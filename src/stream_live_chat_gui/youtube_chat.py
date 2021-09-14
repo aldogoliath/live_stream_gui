@@ -84,27 +84,29 @@ class YoutubeStreamThreadControl(StreamerThreadControl):
             db_filename=db_filename,
         )
         self.questions_control_queue = questions_control_queue
-        # Initializing
-        self.open_questions_start_time = None
 
     def run(self):
         """Main control loop"""
+        open_questions_start_time = None
+        session_questions_limit = 0
         while not self._stopevent.is_set():
             if self.questions_control_queue.empty():
                 log.debug("No value in queue")
             else:
-                self.open_questions = self.questions_control_queue.get()
-                if self.open_questions:
-                    self.open_questions_start_time = datetime.utcnow()
+                open_questions = self.questions_control_queue.get()
+                if open_questions:
+                    open_questions_start_time = datetime.utcnow()
                     log.debug(
-                        f"Setting open_questions_start_time to: {self.open_questions_start_time}"
+                        f"Setting open_questions_start_time to: {open_questions_start_time}"
                     )
+                    # Number of questions to be fetch per session
+                    session_questions_limit = open_questions[-1]
                 else:
-                    self.open_questions_start_time = None
+                    open_questions_start_time = None
 
-                log.debug(f"Open questions queue value: {self.open_questions}")
+                log.debug(f"Open questions queue value: {open_questions}")
             self.youtube_service.get_live_chat_messages_threaded(
-                self.open_questions_start_time
+                open_questions_start_time, session_questions_limit
             )
             # Make the thread sleep so the main thread (gui `controller`) gets to run as well.
             self._stopevent.wait(self._sleepperiod)
@@ -327,10 +329,13 @@ class YoutubeLiveChat:
         return self.live_stream_actual_start_time
 
     def get_live_chat_messages_threaded(
-        self, open_questions_start_time: Optional[datetime]
+        self,
+        open_questions_start_time: Optional[datetime],
+        session_questions_limit: int,
     ) -> None:
         # https://developers.google.com/youtube/v3/live/docs/liveChatMessages/list
         # Quota == 1 (?)
+        # TODO: add try-except clause here for the client call
         request = self.service.liveChatMessages().list(
             liveChatId=self.live_chat_id,
             part="snippet, authorDetails",
@@ -399,6 +404,17 @@ class YoutubeLiveChat:
                 # TODO: Add superchat event handling here (register the question, since it's priority)
 
                 if self.has_limited_user_exceeded_question_count(user):
+                    continue
+
+                if (
+                    session_questions_limit != 0
+                    and self.db.count_all_pending_questions() >= session_questions_limit
+                ):
+                    # If the number of open questions has surpassed the limit for the session, stop adding questions
+                    log.debug(
+                        f"The limit for the open_questions session has been reached: {session_questions_limit}, "
+                        f"not registering: {msg}"
+                    )
                     continue
 
                 # Gets rid of the CHAT_FILTER_WORD in the captured msg and cleans up
