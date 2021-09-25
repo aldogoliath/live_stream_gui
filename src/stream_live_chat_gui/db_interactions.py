@@ -159,24 +159,14 @@ class DBInteractions:
 
     def count_all_pending_questions(self, is_super_chat=False) -> int:
         with session_manager(self.session) as session:
-            if not is_super_chat:
-                pending_questions = (
-                    session.query(Question)
-                    .filter(
-                        Question.is_replied == False,  # noqa: E712
-                        Question.is_super_chat == False,  # noqa: E712
-                    )
-                    .count()
+            pending_questions = (
+                session.query(Question)
+                .filter(
+                    Question.is_replied == False,  # noqa: E712
+                    Question.is_super_chat == is_super_chat,  # noqa: E712
                 )
-            else:
-                pending_questions = (
-                    session.query(Question)
-                    .filter(
-                        Question.is_replied == False,  # noqa: E712
-                        Question.is_super_chat == True,  # noqa: E712
-                    )
-                    .count()
-                )
+                .count()
+            )
             return pending_questions
 
     def count_all_replied_questions(self) -> int:
