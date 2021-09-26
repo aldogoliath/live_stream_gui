@@ -94,6 +94,7 @@ class AnswersUi(QMainWindow):
         - Text Box (Scroll area widget) that shows ???
         - QVBoxLayout:
           - Label Box (Input for question limit for a session)
+          - Label Box (Input for question pool limit for a session)
           - Label to display text regarding the session question limit
         """
         top_layout = QHBoxLayout()
@@ -110,18 +111,31 @@ class AnswersUi(QMainWindow):
             (300, 150, 400, 300),
         )
 
+        regexp = QRegExp("^([1-9][0-9]?)$")
+        validator = QRegExpValidator(regexp)
+
         questions_limit_per_session_block = QVBoxLayout()
         self.questions_limit_input = QLineEdit(self)
         self.questions_limit_input.setMaximumSize(200, 50)
         self.questions_limit_input.setAlignment(Qt.AlignHCenter)
-        regexp = QRegExp("^([1-9][0-9]?)$")
-        validator = QRegExpValidator(regexp)
+
         self.questions_limit_input.setValidator(validator)
         self.questions_limit_per_session_label = QLabel("Session questions limit")
+
+        self.questions_pool_limit_input = QLineEdit(self)
+        self.questions_pool_limit_input.setMaximumSize(200, 50)
+        self.questions_pool_limit_input.setAlignment(Qt.AlignHCenter)
+
+        self.questions_pool_limit_input.setValidator(validator)
+        self.questions_pool_limit_per_session_label = QLabel("Pool limit")
 
         questions_limit_per_session_block.addWidget(self.questions_limit_input)
         questions_limit_per_session_block.addWidget(
             self.questions_limit_per_session_label
+        )
+        questions_limit_per_session_block.addWidget(self.questions_pool_limit_input)
+        questions_limit_per_session_block.addWidget(
+            self.questions_pool_limit_per_session_label
         )
 
         top_layout.addWidget(self.start_stream_button)

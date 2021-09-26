@@ -52,6 +52,8 @@ class AppController:
         self.view.camera_reset_timer.start(1500000)
         # Start with no question limit per session
         self.session_questions_limit = 0
+        self.session_questions_pool_limit = 0
+        self.session_questions_absolute_limit = 0
 
         # Open/Close question control (inter-thread communication)
         self.open_close_question_control_queue = Queue(maxsize=1)
@@ -63,7 +65,7 @@ class AppController:
         self.number_of_pending_questions: int = None
         self.youtube_questions_open: bool = False
 
-        # To prevent being able to use the youtube_open_questions checkbox before clicking Stream Start button
+        # To prevent being able to use the youtube_open_questions checkbox before clicking Start Stream button
         self.view.youtube_open_questions.setEnabled(False)
         self.view.add_manual_question_button.setEnabled(False)
         self.record_file: FileRecording = None
@@ -168,11 +170,43 @@ class AppController:
         self.update_question_counters_and_banner()
         self.view.question_manual_input.clear()
 
-    def add_questions_limit_per_session(self):
-        questions_limit = self.view.questions_limit_input.text()
+    def get_from_gui_and_set_questions_limits(self) -> None:
+        """
+        question_limit should be smaller than questions_pool_limit, if that's not the case, then the pool_value defaults
+        to 0, which means that the limit it will be the `question_limit` value. With this, the first `question_limit`
+        number of questions will be taken in mind when closing the stream of questions to be received.
+        If both inputs are not given then it means that there is no number of questions limit and the flow of the
+        questions should be stopped manually.
+        """
+        questions_limit: str = self.view.questions_limit_input.text()
         if not questions_limit:
-            return
-        self.session_questions_limit = int(questions_limit)
+            session_questions_limit = 0
+        else:
+            session_questions_limit = int(questions_limit)
+
+        # Delete whatever is put in the pool limit text box in the next scenarios:
+        # No text input into it(needs to be a str representing an int)
+        # No text input for the QUESTIONS_LIMIT text box
+        # QUESTIONS_LIMIT int is greater than the value taken as input at the pool limit text box
+        questions_pool_limit: str = self.view.questions_pool_limit_input.text()
+        if (
+            not questions_pool_limit
+            or not session_questions_limit
+            or session_questions_limit > int(questions_pool_limit)
+        ):
+            session_questions_pool_limit = 0
+            self.view.questions_pool_limit_input.clear()
+        else:
+            session_questions_pool_limit = int(questions_pool_limit)
+
+        self.session_questions_limit = session_questions_limit
+        self.session_questions_pool_limit = session_questions_pool_limit
+
+        self.session_questions_absolute_limit = (
+            session_questions_pool_limit
+            if session_questions_pool_limit
+            else session_questions_limit
+        )
 
     def reschedule_last(self):
         """
@@ -419,7 +453,7 @@ class AppController:
 
         if (
             self.view.youtube_open_questions.isChecked()
-            and self.session_questions_limit != 0
+            and self.session_questions_absolute_limit
             and self.check_session_question_limit()
         ):
             self.view.youtube_open_questions.setCheckState(Qt.Unchecked)
@@ -447,7 +481,10 @@ class AppController:
         return
 
     def check_session_question_limit(self):
-        return self.db.count_all_pending_questions() >= self.session_questions_limit
+        return (
+            self.db.count_all_pending_questions()
+            >= self.session_questions_absolute_limit
+        )
 
     def display_answer_average_time(self):
         # TODO: Do calculation of wait average here:
@@ -551,20 +588,35 @@ class AppController:
             f"Checking for {AppController.youtube_chat_checkbox_click_action.__name__}"
         )
         if state == Qt.Checked:
-            self.add_questions_limit_per_session()
+            self.get_from_gui_and_set_questions_limits()
             log.debug(
-                f"Youtube stream, opening questions, with limit: {self.session_questions_limit}"
+                f"Youtube stream, opening questions, with limits: {self.session_questions_limit=}, "
+                f"with pool: {self.session_questions_pool_limit}"
             )
+
+            # session_questions_absolute_limit determines when to stop querying for questions, it can be either be set
+            # to the questions_limit text input box value or to the questions_pool_limit text input box value. Depending
+            # on which one is bigger.
             self.open_close_question_control_queue.put(
-                (True, self.session_questions_limit)
+                (True, self.session_questions_absolute_limit)
             )
             self.view.youtube_open_questions.setText("Close questions")
             self.youtube_questions_open = True
 
         else:
             log.debug("Youtube stream, closing questions")
+            if self.session_questions_pool_limit:
+                number_of_questions_to_delete = (
+                    self.session_questions_pool_limit - self.session_questions_limit
+                )
+                self.db.get_and_delete_random_number_of_pending_questions(
+                    number_of_questions_to_filter=number_of_questions_to_delete
+                )
+            # TODO: pending is handling the case when the session_questions_pool_limit wasn't reach and the questions
+            # were stopped manually
             self.session_questions_limit = 0
-            self.view.questions_limit_input.clear()
+            self.session_questions_pool_limit = 0
+            self.session_questions_absolute_limit = 0
             self.view.youtube_open_questions.setText("Open questions")
             if self.youtube_chat_streamer_thread.is_alive():
                 self.open_close_question_control_queue.put(False)

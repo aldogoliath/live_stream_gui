@@ -51,7 +51,9 @@ class User(Base):
     __tablename__ = "user"
     id = Column(Integer, autoincrement=True, primary_key=True)
     name = Column(Text(), unique=True)
-    questions = relationship("Question", back_populates="user")
+    questions = relationship(
+        "Question", back_populates="user", cascade="all, delete, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return "<User(%r, %r)>" % (self.id, self.name)

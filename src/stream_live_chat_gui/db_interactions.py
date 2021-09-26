@@ -63,6 +63,33 @@ class DBInteractions:
             log.debug(f"Deleting question: {question.question}, with id: {question_id}")
             session.delete(question)
 
+    def get_and_delete_random_number_of_pending_questions(
+        self, number_of_questions_to_filter: int
+    ) -> None:
+        log.debug(
+            f"About to delete {number_of_questions_to_filter} number of pending questions"
+        )
+        with session_manager(self.session) as session:
+            random_selected_n_questions = (
+                session.query(Question)
+                .filter(
+                    Question.is_replied == False,  # noqa: E712
+                    Question.is_super_chat == False,  # noqa: E712
+                )
+                .order_by(func.random())
+                .limit(number_of_questions_to_filter)
+            )
+            questions = [(q.id, q.question) for q in random_selected_n_questions]
+            log.debug(f"Deleting {questions=}")
+            questions_to_be_deleted_ids = [value[0] for value in questions]
+
+            # https://qiita.com/nskydiving/items/eedd5cea88b5afdbfc49
+            # TODO: optimize in the future to use subquery (?)
+            # https://stackoverflow.com/questions/57796891/sqlalchemy-delete-limit-rows
+            session.query(Question).filter(
+                Question.id.in_(questions_to_be_deleted_ids)
+            ).delete(synchronize_session="fetch")
+
     def mark_unmark_question_as_replied(
         self, question_id: int, replied: bool = True
     ) -> None:
@@ -159,7 +186,7 @@ class DBInteractions:
 
     def count_all_pending_questions(self, is_super_chat=False) -> int:
         with session_manager(self.session) as session:
-            pending_questions = (
+            number_of_pending_questions = (
                 session.query(Question)
                 .filter(
                     Question.is_replied == False,  # noqa: E712
@@ -167,7 +194,7 @@ class DBInteractions:
                 )
                 .count()
             )
-            return pending_questions
+            return number_of_pending_questions
 
     def count_all_replied_questions(self) -> int:
         with session_manager(self.session) as session:

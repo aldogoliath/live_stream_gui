@@ -407,7 +407,7 @@ class YoutubeLiveChat:
                     continue
 
                 if (
-                    session_questions_limit != 0
+                    session_questions_limit
                     and self.db.count_all_pending_questions() >= session_questions_limit
                 ):
                     # If the number of open questions has surpassed the limit for the session, stop adding questions
