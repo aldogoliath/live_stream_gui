@@ -170,13 +170,14 @@ class AppController:
         self.update_question_counters_and_banner()
         self.view.question_manual_input.clear()
 
-    def get_from_gui_and_set_questions_limits(self) -> None:
+    def _get_from_gui_and_set_questions_limits(self, opening_questions: bool) -> bool:
         """
         question_limit should be smaller than questions_pool_limit, if that's not the case, then the pool_value defaults
         to 0, which means that the limit it will be the `question_limit` value. With this, the first `question_limit`
         number of questions will be taken in mind when closing the stream of questions to be received.
         If both inputs are not given then it means that there is no number of questions limit and the flow of the
         questions should be stopped manually.
+        Returns a bool signalign that there was a change in the values of the questions limits inputs
         """
         questions_limit: str = self.view.questions_limit_input.text()
         if not questions_limit:
@@ -199,6 +200,14 @@ class AppController:
         else:
             session_questions_pool_limit = int(questions_pool_limit)
 
+        if (
+            not opening_questions
+            and self.session_questions_limit == session_questions_limit
+            and self.session_questions_pool_limit == session_questions_pool_limit
+        ):
+            log.debug("There was no change in the sessions_question_limit, do nothing")
+            return False
+
         self.session_questions_limit = session_questions_limit
         self.session_questions_pool_limit = session_questions_pool_limit
 
@@ -207,6 +216,7 @@ class AppController:
             if session_questions_pool_limit
             else session_questions_limit
         )
+        return True
 
     def reschedule_last(self):
         """
@@ -447,9 +457,27 @@ class AppController:
         self.view.stream_time = self.view.stream_time.addSecs(1)
         self.view.stream_timer_label.setText(self.view.stream_time.toString())
 
+    def _set_questions_limits_from_gui_and_signal_yt_api(self, opening_questions: bool):
+        questions_limits_changed = self._get_from_gui_and_set_questions_limits(
+            opening_questions
+        )
+        log.debug(
+            f"Youtube stream, opening questions, with limits: {self.session_questions_limit=}, "
+            f"with pool: {self.session_questions_pool_limit}"
+        )
+
+        # session_questions_absolute_limit determines when to stop querying for questions, it gets set either to the
+        # questions_limit text input box value or to the questions_pool_limit text input box value, depending
+        # on which one is larger.
+        if questions_limits_changed:
+            self.open_close_question_control_queue.put(
+                (True, self.session_questions_absolute_limit)
+            )
+
     def refresh_while_stream_is_active(self):
         self.view.pending_questions_view.model().refresh()
         self.update_question_counters_and_banner()
+        self._set_questions_limits_from_gui_and_signal_yt_api(False)
 
         if (
             self.view.youtube_open_questions.isChecked()
@@ -588,32 +616,38 @@ class AppController:
             f"Checking for {AppController.youtube_chat_checkbox_click_action.__name__}"
         )
         if state == Qt.Checked:
-            self.get_from_gui_and_set_questions_limits()
-            log.debug(
-                f"Youtube stream, opening questions, with limits: {self.session_questions_limit=}, "
-                f"with pool: {self.session_questions_pool_limit}"
-            )
-
-            # session_questions_absolute_limit determines when to stop querying for questions, it can be either be set
-            # to the questions_limit text input box value or to the questions_pool_limit text input box value. Depending
-            # on which one is bigger.
-            self.open_close_question_control_queue.put(
-                (True, self.session_questions_absolute_limit)
-            )
+            self._set_questions_limits_from_gui_and_signal_yt_api(True)
             self.view.youtube_open_questions.setText("Close questions")
             self.youtube_questions_open = True
 
         else:
             log.debug("Youtube stream, closing questions")
             if self.session_questions_pool_limit:
+                # At this point there can be two scenarios:
+                # 1. The software detected that the limit of questions has been reached automatically
+                #    (check_session_question_limit)
+                # 2. The session_questions_pool_limit wasn't reached but the user closed the questions manually.
+                # `count_all_pending_questions` is equal to `session_questions_pool_limit` for case 1 and for case 2
+                # `count_all_pending_questions` is equal to a value lower than `session_questions_pool_limit`
+
+                number_questions_diff = (
+                    self.db.count_all_pending_questions() - self.session_questions_limit
+                )
+
+                log.debug(
+                    f"Having Pool Limit of {self.session_questions_pool_limit} and Questions Limit: "
+                    f"{self.session_questions_limit}, reached questions diff of: {number_questions_diff}"
+                )
+
                 number_of_questions_to_delete = (
-                    self.session_questions_pool_limit - self.session_questions_limit
+                    number_questions_diff if number_questions_diff > 0 else 0
                 )
-                self.db.get_and_delete_random_number_of_pending_questions(
-                    number_of_questions_to_filter=number_of_questions_to_delete
-                )
-            # TODO: pending is handling the case when the session_questions_pool_limit wasn't reach and the questions
-            # were stopped manually
+
+                if number_of_questions_to_delete:
+                    self.db.get_and_delete_random_number_of_pending_questions(
+                        number_of_questions_to_filter=number_of_questions_to_delete
+                    )
+
             self.session_questions_limit = 0
             self.session_questions_pool_limit = 0
             self.session_questions_absolute_limit = 0
